@@ -7,7 +7,7 @@ description: "Task list template for feature implementation"
 
 **Input**: Design documents from `/specs/001-siyuan-note-export/`
 
-**Prerequisites**: plan.md（技术栈/结构）、spec.md（用户故事与优先级）、tech-decisions.md（已拍板选型）、research.md（R1–R5 实证结论）、data-model.md（实体与状态机）、contracts/（rpc.md + siyuan.md）、quickstart.md（验证场景）
+**Prerequisites**: plan.md（技术栈/结构）、spec.md（用户故事与优先级）、tech-decisions.md（已拍板选型）、research.md（R1–R5 实证结论）、data-model.md（实体与状态机）、contracts/（rpc.md + siyuan.md）、quickstart.md（验证场景）；过程纪律（工程形态、最小装载链路、Session/RPC/持久化边界、隔离 E2E、避坑速查）全程参照 `develop-dsh-plugin` skill（`~/.dsh/skills/develop-dsh-plugin/SKILL.md`）
 
 **Tests**: **包含测试任务**——依据 plan.md Testing 分层（Vitest 单元/集成/Client + 隔离 Host E2E）与项目 preset 的实现循环（红 → 绿 → 重构，`.specify/presets/spec-addendum/implement-command-wrapper.md`）。每个故事的测试**先写并确认失败（红）**，再实现（绿）；纯配置/文档/环境任务无红灯，报告写「任务 Txxx 无行为变更」。完成勾选时在行尾附当次验证证据：`验证: <命令> → <结果>`（仅认本会话输出，跑不了写「未验证（原因）」）。
 
@@ -29,11 +29,11 @@ description: "Task list template for feature implementation"
 
 **Purpose**: 工程初始化与加载契约（develop-dsh-plugin 步骤 2）
 
-- [ ] T001 初始化插件工程骨架：`package.json` 加载契约（`type: module`、`main` 与 `exports["."]` 指向 Host 构建产物、`exports["./client"]` + `dsh.client.platform: web`、`dsh.bundle.patch` 指向 `cordis.patch.yml`、`engines.dsh` 对齐宿主 `0.2.2-rc.1`、`files` 覆盖 Host/Client/patch、Cordis/dsh 共享包同时声明 `peerDependencies`+`devDependencies`）、`tsconfig.json`、目录骨架 `src/ client/ scripts/ tests/` —— file: package.json, tsconfig.json
-- [ ] T002 [P] 编写 Host bundle patch `cordis.patch.yml`（包根插入行，`name` 为 npm 包名；空层写 `[]`，不写纯注释）—— file: cordis.patch.yml
+- [ ] T001 初始化插件工程骨架：`package.json` 加载契约（`type: module`、`main` 与 `exports["."]` 指向 Host 构建产物、`exports["./client"]` + `dsh.client.platform: web` + `dsh.client.inject`（声明提供 slots/locale 的宿主包图边，不能替代 Client `external`）+ `dsh.client.external`（非基座共享模块精确 specifier）+ `dsh.bundle.patch` 指向 `cordis.patch.yml`、`engines.dsh` 对齐宿主 `0.2.2-rc.1`、`files` 覆盖 Host/Client/patch、Cordis/dsh 共享包同时声明 `peerDependencies`+`devDependencies`）、`tsconfig.json`、目录骨架 `src/ client/ scripts/ tests/` —— file: package.json, tsconfig.json
+- [ ] T002 [P] 编写 Host bundle patch `cordis.patch.yml`（包根插入行，`name` 为 npm 包名；空层写 `[]`，不写纯注释；Cordis 行 `id` 与 Client factory 包名 `id` 属不同命名空间；由 `dsh.bundle.patch` 自动挂载，不手改宿主生成 bundle）—— file: cordis.patch.yml
 - [ ] T003 [P] 实现 Client handoff 构建 `scripts/build-client.mjs`：产出 `window.__ModuleLoader__.load({ id, factory(require) {} })` CJS 闭包工厂，无裸 ESM 残留；external 仅用宿主 loader module table 核对过的精确 specifier（React 等基座不得打第二份）—— file: scripts/build-client.mjs
 - [ ] T004 配置 Vitest 分层测试与质量脚本：`typecheck`/`lint`/`test`（聚焦与全量）/`build`/`pack`，测试按 `tests/unit tests/integration tests/client tests/e2e` 分层 —— file: package.json, vitest.config.ts
-- [ ] T005 [P] 隔离验证环境脚本：独立 `DSH_HOME` + web profile + 独立端口的启动与清理（含 `DSH_AGENTS_HOME` 隔离说明；多行启动逻辑写临时 `.ps1` 用 `pwsh -NoProfile -File` 执行）—— file: scripts/setup-isolated-env.ps1, scripts/teardown-isolated-env.ps1
+- [ ] T005 [P] 隔离验证环境脚本：独立 `DSH_HOME` + web profile + 独立端口的启动与清理（`DSH_AGENTS_HOME` 不随 `DSH_HOME` 自动隔离，需另设；`EADDRINUSE` 时识别并只停止自己的遗留测试进程，不盲目换端口或杀进程；多行启动逻辑写临时 `.ps1` 用 `pwsh -NoProfile -File` 执行）—— file: scripts/setup-isolated-env.ps1, scripts/teardown-isolated-env.ps1
 - [ ] T006 [P] 定义 Host/Client 共享 RPC 类型（按 contracts/rpc.md 全量：请求/响应、统一信封、`ErrorInfo{category,message,retryable}`、category 枚举、`StoragePath`、7 种 status）—— file: src/contract.ts, client/src/rpc.ts
 
 **Checkpoint**: `npm run build`/`test`/`pack` 可跑通，handoff 构建测试（factory 执行、插件 id、apply/inject、external require 断言）通过。
@@ -46,13 +46,13 @@ description: "Task list template for feature implementation"
 
 **⚠️ CRITICAL**: 本阶段完成前不得开始任何用户故事任务
 
-- [ ] T007 Host 最小入口：导出 `name`/`inject`/`Config`/`apply()`，只声明实际使用的 Cordis 服务（`slots`、`llm`、`webServer` 等），Config schema 含 `siyuan.endpoint`（默认 `http://127.0.0.1:6806`）与 `siyuan.token`（必填，凭据不入日志/审计/状态文件），资源注册全部经 `ctx.effect()` 对称清理 —— file: src/index.ts
+- [ ] T007 Host 最小入口：导出 `name`/`inject`/`Config`/`apply()`，只声明实际使用的 Cordis 服务（`slots`、`llm`、`webServer` 等），Config schema 含 `siyuan.endpoint`（默认 `http://127.0.0.1:6806`）与 `siyuan.token`（必填，凭据不入日志/审计/状态文件），资源注册全部经 `ctx.effect()` 对称清理、重复 dispose 安全；宿主 config 覆盖是**整体替换而非深合并** —— file: src/index.ts
 - [ ] T008 [P] Client 最小切片：经 `ctx.slots.inject('conversation.chat.assistant-actions', cb)` 等待声明存活后 `ctx.slots.register({ name, id: 'siyuan-export', order, locale, inject })` 注册占位按钮（只用 `React.createElement` + `styles.insert(css)`，动态包 priority 低于内置条目）—— file: client/src/entry.tsx, client/src/styles.css
 - [ ] T009 最小装载链路验证：源码 → Host 构建 → Client handoff → tarball → 隔离安装 → `--profile web --dump-config`（仅证入选）→ 冷启动 Host → UI slot 出现占位按钮；装载失败按 package.json → patch → exports → inject/external → 产物格式 → Host 日志顺序排障 —— file: tests/client/handoff.test.ts（追加断言）
 - [ ] T010 SiYuan 适配器核心：Token 经 Config 读取、`Authorization: Token <token>` 头、POST JSON、**同时处理「非 2xx」与「200 但 code!=0」**、错误分类映射（认证→`siyuan-auth`、连接→`siyuan-connect`、路径→`siyuan-path`）、`/api/system/version` 探活、`AbortSignal` + 有限超时 + retryable 限次退避、响应不含堆栈/内部路径/正文秘密 —— file: src/siyuan/client.ts
 - [ ] T011 SiYuan 写入与同名消歧：`createDocWithMd` 封装（`path` 以 `/` 开头、缺失父级自动创建）+ commit 前 `getIDsByHPath` 查重，命中追加 ` (2)`、` (3)`… 后缀保证 FR-007「不覆盖、独立文档」；`pathAmbiguous`/`indexUnavailable` → `siyuan-path` —— file: src/siyuan/client.ts
 - [ ] T012 [P] LLM 适配器：`inject = ['llm']`；`listProviders()`→`listModels()`→`resolveModelInfo()` 解析后 `prepareCall(config, signal?, configure?)` → `stream()`（一次性）；`maxTokens` 输出预算；**FR-013 输入裁剪的唯一 prompt 构造点**（输入 = 单次输出 + 最小指令模板，禁止 Session 历史/用户提问/工具输出）；`{title, body}` 结构校验与大小限制；错误分类（`llm-adapter`/`llm-quota`/`llm-timeout`/`llm-structure`）；provider/model 以真实小请求验证（防 `NO_ADAPTER` 误报成功）—— file: src/export/llm.ts
-- [ ] T013 [P] 偏好存储：`resolveDshHome()` 数据根下插件自有目录、`version` 字段、`lastPath`/`draft`、**临时位置写全量 → 原子切换**、全部写入同一串行队列、Windows 短暂 `EPERM` 有限退避；localStorage 只作非权威显示缓存 —— file: src/store/prefs.ts
+- [ ] T013 [P] 偏好存储：`resolveDshHome()` 数据根下插件自有目录、`version` 字段、`lastPath`/`draft`、**临时位置写全量 → 原子切换**、全部写入同一串行队列、Windows 短暂 `EPERM` 有限退避；同 root 多 Host 并发时独占锁 + heartbeat + stale 判定，第二 Host 明确只读不静默并发写；localStorage 只作非权威显示缓存 —— file: src/store/prefs.ts
 - [ ] T014 RPC 路由骨架：`webServer.register()` 同源 prefix；方法白名单仅 `export.open`/`export.state`/`export.commit`/`export.cancel`/`tree.list`；POST JSON + nonce 自定义头 + body 上限 1MB；逐字段校验（可选参数 `!== undefined`，空字符串不回退为未提供）；统一信封 `{ok:true,data}|{ok:false,error}`；`recordInput` 只记 messageId/taskId 元数据 —— file: src/api/routes.ts
 - [ ] T015 [P] 测试替身基座（按 真实→fake→stub→mock 顺序取 fake）：内存版思源 HTTP 端口（含同 path 行为开关）与假 `PreparedLlmCall`（可控 成功/超时/结构不合/NO_ADAPTER）—— file: tests/integration/fake-siyuan.ts, tests/integration/fake-llm.ts
 
@@ -241,4 +241,5 @@ Task: "T023 按钮组件 client/src/components/ExportButton.tsx"
 - 测试先红后绿；坏测试反模式（实现耦合/同义反复/横向切片）按 preset 规避，走**纵向切片**（一个测试 → 一个实现 → 一个重构）
 - 测试替身顺序：真实实现 → fake → stub → mock（本特性用 fake 思源端口与假 prepared call）
 - 每个任务勾选时附当次会话的验证证据；未跑写「未验证（原因）」
+- E2E 成功判定以**真实状态**为准（RPC 响应、持久化状态、思源文档、重启结果）——DOM 点击成功不等于业务成功（skill 避坑速查）
 - 每个故事完成后停在 Checkpoint 独立验证，避免跨故事回归
