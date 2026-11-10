@@ -3,9 +3,12 @@
  *
  * 接入模式（对齐官方 ui-message-feedback）：
  *  - declare module 合并 `LocaleNamespaceMap`（声明本 NS 的键集）
+ *  - **apply 时 `ctx.locale.register(NS, { zh, en })` 注册运行时字典**
+ *    （真实试用缺陷修复：漏注册 → t() 回退显示 key，如 "button.export"）
  *  - register 描述符带 `locale: NS` → 框架把 `t` seat 注入组件 props
  *  - 组件用 `t('key')` / `t('key', { param })` 取文案，不再硬编码
  */
+import type { LocaleKeysOf } from '@deepseek-ai/dsh-client-ui-slots';
 
 /** 简体中文字典（key-set 真源） */
 export const zh = {
@@ -113,9 +116,16 @@ export function shouldAppendGuide(message: string, category: string): boolean {
   return !message.includes(GUIDE_LEAD_PHRASE[category]);
 }
 
-/** 测试/降级用的同步 zh 翻译器（签名对齐官方 TranslateNS：params 值为 unknown） */
-export function zhT(key: SiyuanExportKey, params?: Record<string, unknown>): string {
-  let text: string = zh[key];
+/**
+ * 测试/降级用的同步 zh 翻译器。
+ * 签名对齐官方 `TranslateNS<'siyuan-export'>`：键集 = 本 NS 键 ∪ 公共词表
+ * （`LocaleKeysOf` 含 common 键如 `search`，不在本字典时回退显示 key）。
+ */
+export function zhT(
+  key: LocaleKeysOf<'siyuan-export'>,
+  params?: Record<string, unknown>,
+): string {
+  let text = (zh as Record<string, string>)[key] ?? String(key);
   if (params) {
     for (const [name, value] of Object.entries(params)) {
       text = text.replaceAll(`{${name}}`, String(value));

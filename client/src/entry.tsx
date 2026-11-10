@@ -5,19 +5,27 @@
  *  - `ctx.slots.inject(key, cb)` 等待 slot 声明存活后再 `register`（裸 register 会抛错）
  *  - 独立 id `siyuan-export`、order 高于官方 feedback(10)，共存不替换
  *  - JSX 编译为 react/jsx-runtime（宿主基座 external，不打第二份 React）
- *  - 顶层不触碰 DOM；弹窗用 React 状态挂在宿主 overlay 容器
+ *  - 顶层不触碰 DOM；弹窗经 createPortal 直挂 document.body
+ *    （真实试用缺陷修复：fixed overlay 在宿主 transform 祖先内会退化错位）
+ *  - 运行时必须 `ctx.locale.register(NS, {zh, en})` 注册字典
+ *    （真实试用缺陷修复：漏注册导致 t() 回退显示 key，如 "button.export"）
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Context } from '@deepseek-ai/cordis';
 // 拉入 slot 相关的 Context/SlotMap 模块增强（type-only；client 侧增强在 ./client 子路径）
 import type {} from '@deepseek-ai/dsh-client-ui-slots';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client';
+// locale 服务（ctx.locale.register）的 Context 增强
+import type {} from '@deepseek-ai/dsh-client-locale/client';
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StoragePath, TreeNode } from '../../src/contract';
 import { ExportButton } from './components/ExportButton';
 import { DocTree } from './components/DocTree';
 import { ExportDialog } from './components/ExportDialog';
+// 值导入：字典需在 apply 时注册进宿主 locale 服务（type-only 不携带运行时）
+import { zh, en } from './locales';
 // type-only：拉入 siyuan-export 命名空间的 LocaleNamespaceMap 合并
 import type {} from './locales';
 import { ClientRpcError, createExportClient, type ExportClient } from './rpc';
@@ -27,7 +35,7 @@ const SLOT_KEY = 'conversation.chat.assistant-actions' as const;
 /** locale 命名空间（client/src/locales.ts 声明键集） */
 const NS = 'siyuan-export';
 
-export const inject = ['slots'];
+export const inject = ['slots', 'locale'];
 
 interface DialogState {
   taskId: string;
@@ -40,7 +48,11 @@ interface DialogState {
 }
 
 /** slot owner 提供的 props + locale seat（Research R1：owner = { messageId }） */
-type SiyuanExportActionProps = PropsRuntime<typeof SLOT_KEY> & PropsLocale<'siyuan-export'>;
+type SiyuanExportActionProps = PropsRuntime<typeof SLOT_KEY> &
+  PropsLocale<'siyuan-export'> & {
+    /** 测试注入点：默认 createExportClient（生产走真实 RPC） */
+    clientFactory?: () => ExportClient;
+  };
 
 function toErrorInfo(err: unknown): { category: string; message: string; retryable: boolean } {
   if (err instanceof ClientRpcError) {
@@ -60,7 +72,7 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
   const taskRef = useRef<string | null>(null);
 
   const client = (): ExportClient => {
-    if (!clientRef.current) clientRef.current = createExportClient();
+    if (!clientRef.current) clientRef.current = (props.clientFactory ?? createExportClient)();
     return clientRef.current;
   };
 
@@ -148,7 +160,8 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
     <>
       <ExportButton messageId={messageId} loading={loading} t={t} onExport={(id) => void startExport(id)} />
       {dialog ? (
-        <ExportDialog
+        createPortal(
+          <ExportDialog
           status={dialog.status}
           title={dialog.title}
           target={dialog.target}
@@ -176,13 +189,20 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
               setDialog((prev) => (prev ? { ...prev, target } : prev))
             }
           />
-        </ExportDialog>
+          </ExportDialog>,
+          document.body,
+        )
       ) : null}
     </>
   );
 }
 
 export function apply(ctx: Context): void {
+  // 运行时字典注册（真实试用缺陷修复：漏注册 → t() 回退显示 key，如 "button.export"）
+  ctx.effect(
+    () => ctx.locale.register(NS, { zh, en }),
+    'dsh-siyuan-export: dictionaries',
+  );
   ctx.slots.inject(SLOT_KEY, () =>
     ctx.slots.register(
       { name: SLOT_KEY, id: 'siyuan-export', order: 100, locale: NS },
