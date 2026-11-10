@@ -17,16 +17,29 @@ interface StandardShape {
 const validate = (Config as unknown as StandardShape)['~standard'].validate;
 
 describe('插件 Config（~standard.validate）', () => {
-  it('空对象 → 默认 endpoint + 空 token', () => {
+  it('空对象 → 默认 endpoint + 空 token + 默认 dataDir', () => {
     const r = validate({});
     expect(r.issues).toBeUndefined();
-    expect(r.value).toEqual({ endpoint: 'http://127.0.0.1:6806', token: '' });
+    expect(r.value).toEqual({
+      endpoint: 'http://127.0.0.1:6806',
+      token: '',
+      dataDir: 'plugins/siyuan-export',
+    });
   });
 
   it('显式提供 endpoint/token 时原样保留', () => {
     const r = validate({ endpoint: 'http://127.0.0.1:6807', token: 'secret-token' });
     expect(r.issues).toBeUndefined();
-    expect(r.value).toEqual({ endpoint: 'http://127.0.0.1:6807', token: 'secret-token' });
+    expect(r.value).toEqual({
+      endpoint: 'http://127.0.0.1:6807',
+      token: 'secret-token',
+      dataDir: 'plugins/siyuan-export',
+    });
+  });
+
+  it('dataDir 类型非法 → issues', () => {
+    expect(validate({ dataDir: 42 }).issues?.length).toBeGreaterThan(0);
+    expect(validate({ dataDir: '' }).issues?.[0]?.message).toContain('dataDir');
   });
 
   it('endpoint/token 类型非法 → issues（带 path）', () => {

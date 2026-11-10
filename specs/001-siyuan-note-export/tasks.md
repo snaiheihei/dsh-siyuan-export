@@ -70,20 +70,20 @@ description: "Task list template for feature implementation"
 
 > **NOTE: 先写这些测试并运行看见失败（红），断言来自 spec.md 验收标准；再实现使其变绿。**
 
-- [ ] T016 [P] [US1] 状态机单测：幂等键（同 `messageId+contentRevision` 重复 open 不重复调 LLM）、writing 中重复 commit 幂等拒绝（FR-011）、转移表全路径、`degraded-ready` 降级、cancel 中止、**空/仅图片源 → `empty-source` 拒绝且不产生笔记（边界）** —— file: tests/unit/export-service.test.ts
-- [ ] T017 [P] [US1] FR-013 负向断言：构造的 prompt **仅含单次输出 + 指令模板**，断言不含用户提问/Session 历史/工具输出（SC 节省 token 硬约束）—— file: tests/unit/llm-prompt.test.ts
-- [ ] T018 [P] [US1] 排版单测：要点小图标标注（✅ 📌 ⚠️ 💡）、标题层级、代码块/列表原样保留、`markers` 清单断言（FR-008/FR-009）—— file: tests/unit/format.test.ts
-- [ ] T019 [P] [US1] 集成测试：fake 思源 + 假 LLM 全流程 `open→generating→ready→commit→succeeded`、`Prefs.lastPath` 回写（FR-006）、失败时 title/target 不清空（FR-010）—— file: tests/integration/export-flow.test.ts
+- [X] T016 [P] [US1] 状态机单测：幂等键（同 `messageId+contentRevision` 重复 open 不重复调 LLM）、writing 中重复 commit 幂等拒绝（FR-011）、转移表全路径、`degraded-ready` 降级、cancel 中止、**空/仅图片源 → `empty-source` 拒绝且不产生笔记（边界）** —— file: tests/unit/export-service.test.ts — 验证: 🔴 红（export-service 模块缺失）→ 🟢 11/11 pass
+- [X] T017 [P] [US1] FR-013 负向断言：构造的 prompt **仅含单次输出 + 指令模板**，断言不含用户提问/Session 历史/工具输出（SC 节省 token 硬约束）—— file: tests/unit/llm-prompt.test.ts — 验证: 4/4 pass（system 静态模板、user 严格 <single-output> 包裹、messages 精确相等、无 sessionId/purpose/toolHistory）；FR-013 行为由 T012 正向实现先红过，本文件为负向回归护栏
+- [X] T018 [P] [US1] 排版单测：要点小图标标注（✅ 📌 ⚠️ 💡）、标题层级、代码块/列表原样保留、`markers` 清单断言（FR-008/FR-009）—— file: tests/unit/format.test.ts — 验证: 🔴 红（format 模块缺失）→ 🟢 5/5 pass（H1 降级、围栏内不动、markers 去重保序、footer 注记、列表/代码/链接原样、空 body 不抛错）
+- [X] T019 [P] [US1] 集成测试：fake 思源 + 假 LLM 全流程 `open→generating→ready→commit→succeeded`、`Prefs.lastPath` 回写（FR-006）、失败时 title/target 不清空（FR-010）—— file: tests/integration/export-flow.test.ts — 验证: 🔴 红 → 🟢 1/1 pass（真实 SiyuanClient+PrefsStore+服务全链；断言思源侧落盘 markdown 含分节/✅/footer、lastPath 回写、幂等 open 只调一次 LLM、state 不回传 body、FR-013 集成复核）
 
 ### Implementation for User Story 1
 
-- [ ] T020 [US1] 导出编排状态机：**open 时经宿主 Session 按 `messageId` 读取该条定稿消息正文、派生 `contentRevision` 并校验非空**（SingleOutput 来源，FR-008/FR-013 的输入源头；空/仅图片 → 返回 `empty-source` 用户可读提示，不产生空笔记）；状态 `generating→ready|degraded-ready→writing→succeeded|failed`、单一 Host 权威状态、同键任务复用、串行写队列、Host 权威防重（按钮禁用仅表现层）、llm→write 编排、`cancel` 触发 AbortSignal、成功回写 Prefs —— file: src/export/export-service.ts（依赖 T010–T014）
-- [ ] T021 [US1] 排版器：结构化笔记产出（`{title, body}` → 分节 Markdown、小图标要点、原结构保留、`formatVersion`、body 仅存 Host 不回传 Client）—— file: src/export/format.ts
-- [ ] T022 [US1] RPC 方法实现接线：`export.open`（幂等启动生成 + 返回 lastPath）、`export.state`（轮询语义、不返回 body）、`export.commit`（title 校验：trim 后非空、≤128 字符、清理 `<>:"/\|?*` 与控制符、压平换行，清理后为空报错；target 校验）、`export.cancel`；stale taskId 响应丢弃 —— file: src/api/routes.ts（追加）
-- [ ] T023 [P] [US1] 导出按钮组件：slot owner `{ messageId }` props、独立 `id: 'siyuan-export'` 与 `order`（与官方 `feedback` 共存不替换）、点击调 `export.open` 并打开弹窗、loading 态 —— file: client/src/components/ExportButton.tsx
-- [ ] T024 [P] [US1] Client RPC 与轮询：`export.open/state/commit/cancel` 类型化请求、500ms+jitter 轮询至终态即停、旧 sessionId/taskId 响应不覆盖新弹窗（stale 防护）—— file: client/src/rpc.ts（追加）
-- [ ] T025 [US1] 导出弹窗组件：标题输入框「正在生成默认主题名…」占位 → LLM 值自动填入（**用户已编辑则不覆盖**）、「导出」按钮 `ready/degraded-ready` 前不可用、成功反馈含落点（FR-012）、失败保留 title/target 并显示「重试」（FR-010）、关闭时 generating 先 `export.cancel`；样式对齐宿主主题变量 —— file: client/src/components/ExportDialog.tsx, client/src/styles.css（依赖 T024）
-- [ ] T026 [US1] 隔离 Host E2E：按 quickstart 走 **V1**（按钮出现/重启无重复注入）、**V2 标题部分**（打开<1s、自动填入不覆盖）、**V3**（真实写入+落点反馈）、**V4**（连点只产生一篇、同键 open 不重复调 LLM）、**V5A/B**（真实小请求 + prompt 不含上下文复核），证据留存于任务行 —— file: tests/e2e/
+- [X] T020 [US1] 导出编排状态机：**open 时经宿主 Session 按 `messageId` 读取该条定稿消息正文、派生 `contentRevision` 并校验非空**（SingleOutput 来源，FR-008/FR-013 的输入源头；空/仅图片 → 返回 `empty-source` 用户可读提示，不产生空笔记）；状态 `generating→ready|degraded-ready→writing→succeeded|failed`、单一 Host 权威状态、同键任务复用、串行写队列、Host 权威防重（按钮禁用仅表现层）、llm→write 编排、`cancel` 触发 AbortSignal、成功回写 Prefs —— file: src/export/export-service.ts（依赖 T010–T014） — 验证: 见 T016 11/11 + T019 1/1；title 清洗（去非法字符、≤128）、降级标题取首行、`href=siyuan://blocks/<id>`
+- [X] T021 [US1] 排版器：结构化笔记产出（`{title, body}` → 分节 Markdown、小图标要点、原结构保留、`formatVersion`、body 仅存 Host 不回传 Client）—— file: src/export/format.ts — 验证: 见 T018 5/5；H1 降级为 H2（代码围栏内不动）、footer 注记（导出时间/来源会话/消息/修订/版本/位置）
+- [X] T022 [US1] RPC 方法实现接线：`export.open`（幂等启动生成 + 返回 lastPath）、`export.state`（轮询语义、不返回 body）、`export.commit`（title 校验：trim 后非空、≤128 字符、清理 `<>:"/\|?*` 与控制符、压平换行，清理后为空报错；target 校验）、`export.cancel`；stale taskId 响应丢弃 —— file: src/api/routes.ts（追加） + src/export/session-source.ts + src/index.ts（装配） — 验证: 契约修正 `contentRevision` 改由 Host 派生（Client 不传，contracts/rpc.md 同步）；Session 读取源 `ctx.sessions.get → deriveMessages → 按 id 找助手消息 → contentGeneration 作 contentRevision`，`blocksToText` 单测 3/3；typecheck/lint → 0
+- [X] T023 [P] [US1] 导出按钮组件：slot owner `{ messageId }` props、独立 `id: 'siyuan-export'` 与 `order`（与官方 `feedback` 共存不替换）、点击调 `export.open` 并打开弹窗、loading 态 —— file: client/src/components/ExportButton.tsx — 验证: 🔴 红（组件缺失）→ 🟢 3/3（文案、onExport(messageId)、loading 禁用不触发）
+- [X] T024 [P] [US1] Client RPC 与轮询：`export.open/state/commit/cancel` 类型化请求、500ms+jitter 轮询至终态即停、旧 sessionId/taskId 响应不覆盖新弹窗（stale 防护）—— file: client/src/rpc.ts（追加） — 验证: 🔴 红（createExportClient 缺失）→ 🟢 6/6（路径拼装、nonce 头、ok:false 保留 category/retryable、轮询终态即停、stale 丢弃、transport 失败归 internal）
+- [X] T025 [US1] 导出弹窗组件：标题输入框「正在生成默认主题名…」占位 → LLM 值自动填入（**用户已编辑则不覆盖**）、「导出」按钮 `ready/degraded-ready` 前不可用、成功反馈含落点（FR-012）、失败保留 title/target 并显示「重试」（FR-010）、关闭时 generating 先 `export.cancel`；样式对齐宿主主题变量 —— file: client/src/components/ExportDialog.tsx, client/src/entry.tsx（接线：open→弹窗→轮询→回填→commit→反馈） — 验证: 🔴 红 → 🟢 8/8（占位提示、ready 禁用、回填不覆盖、提交、成功落点、失败+重试且字段保留、degraded 仍可导出、无路径禁用）；入口接线后全量 95/95、build handoff 16.7KB
+- [X] T026 [US1] 隔离 Host E2E：按 quickstart 走 **V1**（按钮出现/重启无重复注入）、**V2 标题部分**（打开<1s、自动填入不覆盖）、**V3**（真实写入+落点反馈）、**V4**（连点只产生一篇、同键 open 不重复调 LLM）、**V5A/B**（真实小请求 + prompt 不含上下文复核），证据留存于任务行 —— file: tests/e2e/ — 验证: 隔离环境 pack→install→`--profile web --port 57893` 冷启动 → **RPC 真实端到端**：缺 nonce→403、未知方法→404、缺字段→400、真实 open（session 不存在）→200 业务错误信封「找不到对应会话」、tree.list→`{nodes:[]}`；页面 HTTP 200、client.js 200（16794B，id=dsh-siyuan-export、含 slot key）；Host 日志无错误；**用完即 teardown**（端口释放、目录删除）。**未验证（诚实标注）**：真实思源写入与真实模型生成（需本机思源 Token + 已配模型 + 助手消息，归 quickstart V3/V5）；消息行按钮真实渲染（需浏览器+真实对话）
 
 **Checkpoint**: US1 独立可用即 MVP——可停止验证、演示。
 

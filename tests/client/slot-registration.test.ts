@@ -15,7 +15,7 @@ describe('client entry slot 注册', () => {
     expect(inject).toEqual(['slots']);
   });
 
-  it('apply 经 ctx.slots.inject 注册 assistant-actions 占位按钮', () => {
+  it('apply 经 ctx.slots.inject 注册 assistant-actions 导出按钮', () => {
     const register = vi.fn((_desc: unknown, _component: unknown) => () => {});
     const injectFn = vi.fn((_key: string, cb: () => unknown) => {
       cb(); // 模拟「slot 已声明则同步执行」
@@ -30,14 +30,12 @@ describe('client entry slot 注册', () => {
 
     const [desc, component] = register.mock.calls[0] as unknown as [
       { name: string; id: string; order: number },
-      (props: unknown) => { props: { children?: unknown } },
+      unknown,
     ];
     expect(desc.name).toBe('conversation.chat.assistant-actions');
     expect(desc.id).toBe('siyuan-export');
     expect(typeof desc.order).toBe('number');
+    // 注册的是 React 组件（Hooks 组件不可直接调用渲染 —— 渲染行为见 T023/T025 组件测试）
     expect(typeof component).toBe('function');
-
-    const el = component({});
-    expect(el.props.children).toBe('导出到思源');
   });
 });
