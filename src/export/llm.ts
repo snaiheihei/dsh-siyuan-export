@@ -28,6 +28,11 @@ export const DEFAULT_MAX_TOKENS = 4096;
 const MAX_BODY_BYTES = 1024 * 1024;
 
 export interface PreparedLike {
+  /**
+   * prepareCall 解析出的深冻结配置（含 adapterDefaults 物化字段）——
+   * stream 请求必须与其匹配，否则宿主报 INVALID_PREPARED_CALL（真实失败根因2）。
+   */
+  config: LlmCallConfig;
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }
 
@@ -36,6 +41,14 @@ export interface LlmHostLike {
   listProviders(): readonly LlmProviderInfo[] | Promise<readonly LlmProviderInfo[]>;
   listModels(provider: string): Promise<readonly LlmModelInfo[]>;
   prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLike>;
+  /**
+   * 对话 agent 列表（route 优先级最高——学 snail-memory `selectModelRoute`）：
+   * agent.options 携带对话实际使用的 provider/model，优先于 listProviders[0]
+   * （真实失败根因1：列表第一个 provider 往往未配置凭据）。
+   */
+  agents?: {
+    list(): readonly { options: { provider?: string; model?: string } }[];
+  };
 }
 
 export interface GenerateInput {
@@ -145,6 +158,16 @@ async function resolveRoute(
   llm: LlmHostLike,
   signal?: AbortSignal,
 ): Promise<{ provider: string; model: string }> {
+  // 1) 对话 agent 的模型选项（真实失败根因1：优先用对话实际 route）
+  try {
+    for (const agent of llm.agents?.list() ?? []) {
+      const provider = agent.options?.provider;
+      const model = agent.options?.model;
+      if (provider && model) return { provider, model };
+    }
+  } catch {
+    // agents 查询失败不阻断，回落 listProviders
+  }
   let providers: readonly LlmProviderInfo[];
   try {
     providers = await llm.listProviders();
@@ -180,12 +203,12 @@ async function runGenerate(llm: LlmHostLike, input: GenerateInput): Promise<stri
   }
 
   const { system, user } = buildExportPrompt(input.content);
+  // 真实失败根因2：request 必须与 prepared.config 匹配（含 adapterDefaults 物化字段），
+  // 自拼字段会触发 INVALID_PREPARED_CALL —— 展开 prepared.config（对齐 snail-memory 用法）
   const options: GenerateOptions = {
-    provider: route.provider,
-    model: route.model,
-    messages: [{ role: 'user', content: [{ type: 'text', text: user }] }],
+    ...prepared.config,
     system,
-    maxTokens,
+    messages: [{ role: 'user', content: [{ type: 'text', text: user }] }],
     ...(input.signal ? { signal: input.signal } : {}),
   };
 
@@ -213,9 +236,13 @@ async function runGenerate(llm: LlmHostLike, input: GenerateInput): Promise<stri
   return text;
 }
 
-/** 构建宿主 LLM 网关（生产注入 ctx.llm） */
-export function createHostLlmGateway(llm: LlmHostLike): LlmGateway {
+/** 构建宿主 LLM 网关（生产注入 ctx.llm；agents 用于 route 优先级） */
+export function createHostLlmGateway(
+  llm: LlmHostLike,
+  agents?: LlmHostLike['agents'],
+): LlmGateway {
+  const host: LlmHostLike = agents ? { ...llm, agents } : llm;
   return {
-    generate: (input: GenerateInput) => runGenerate(llm, input),
+    generate: (input: GenerateInput) => runGenerate(host, input),
   };
 }

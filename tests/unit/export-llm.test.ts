@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm';
 import {
   LlmError,
@@ -51,6 +51,7 @@ function fakeLlm(opts: {
       if (opts.prepareThrows) throw opts.prepareThrows;
       seen.config = config;
       const prepared: PreparedLike = {
+        config: config as never,
         stream: (options: GenerateOptions) => {
           seen.options = options;
           return (async function* () {
@@ -109,6 +110,68 @@ describe('parseStructuredOutput', () => {
 });
 
 describe('createHostLlmGateway.generate', () => {
+  it('route 优先取 agents 的模型选项（真实失败根因1：listProviders[0] 往往无凭据）', async () => {
+    // agents 选项的 provider 不是列表第一个 → 断言 prepareCall 用它
+    const prepareCall = vi.fn(async (config: { provider: string; model: string }) => ({
+      config: { ...config, temperature: 0.7 },
+      stream: () =>
+        (async function* () {
+          yield { type: 'text-delta', index: 0, text: '{"title":"T","body":"B"}' };
+          yield { type: 'finish', reason: { kind: 'stop' } } as never;
+        })(),
+    }));
+    const plain = {
+      listProviders: () => [
+        { id: 'p-unconfigured', name: '未配置' },
+        { id: 'p-dialog', name: '对话模型' },
+      ],
+      listModels: async (provider: string) => [
+        { id: provider === 'p-dialog' ? 'm-dialog' : 'm-x', name: 'm' },
+      ],
+      prepareCall,
+      agents: { list: () => [{ options: { provider: 'p-dialog', model: 'm-dialog' } }] },
+    };
+    const gateway = createHostLlmGateway(plain as unknown as LlmHostLike);
+    await gateway.generate({ content: 'x' });
+    const firstConfig = prepareCall.mock.calls[0]?.[0] as
+      | { provider?: string; model?: string }
+      | undefined;
+    expect(firstConfig).toMatchObject({ provider: 'p-dialog', model: 'm-dialog' });
+  });
+
+  it('stream 请求展开 prepared.config（真实失败根因2：自拼字段缺 adapterDefaults → INVALID_PREPARED_CALL）', async () => {
+    const seen: Record<string, unknown>[] = [];
+    const plain = {
+      listProviders: () => [{ id: 'p1', name: 'P' }],
+      listModels: async () => [{ id: 'm1', name: 'M' }],
+      prepareCall: async (config: { provider: string; model: string }) => {
+        const preparedConfig = { ...config, temperature: 0.7, stop: ['\n\n'] }; // adapterDefaults 物化
+        return {
+          config: preparedConfig,
+          stream: (options: Record<string, unknown>) => {
+            // 模拟宿主校验：request 必须与 prepared.config 匹配（缺字段即 INVALID_PREPARED_CALL）
+            for (const [key, value] of Object.entries(preparedConfig)) {
+              if (options[key] !== value) {
+                throw new Error(`INVALID_PREPARED_CALL: ${key} mismatch`);
+              }
+            }
+            seen.push(options);
+            return (async function* () {
+              yield { type: 'text-delta', index: 0, text: '{"title":"T","body":"B"}' };
+              yield { type: 'finish', reason: { kind: 'stop' } } as never;
+            })();
+          },
+        };
+      },
+    };
+    const gateway = createHostLlmGateway(plain as unknown as LlmHostLike);
+    await gateway.generate({ content: 'x' });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ provider: 'p1', model: 'm1', temperature: 0.7, stop: ['\n\n'] });
+    expect(seen[0]).toHaveProperty('messages');
+    expect(seen[0]).toHaveProperty('system');
+  });
+
   it('route 解析 + 流式拼装：返回完整文本，maxTokens 默认 4096，prompt 进入 stream options', async () => {
     const { llm, seen } = fakeLlm({ chunks: [chunkText('{"title":"T",'), chunkText('"body":"B"}'), chunkFinish('stop')] });
     const gateway = createHostLlmGateway(llm);
@@ -188,6 +251,7 @@ describe('createHostLlmGateway.generate', () => {
       prepareCall: async (config: Seen['config']) => {
         seen2.config = config;
         const prepared: PreparedLike = {
+          config: config as never,
           stream: () =>
             (async function* () {
               yield chunkText('partial');

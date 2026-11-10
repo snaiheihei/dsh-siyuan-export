@@ -12,6 +12,8 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-host-webserver';
 import type {} from '@deepseek-ai/dsh-llm';
 import type {} from '@deepseek-ai/dsh-session';
+// agents 服务（ctx.agents：LLM route 优先取对话实际模型——学 snail-memory selectModelRoute）
+import type {} from '@deepseek-ai/dsh-agent';
 import { registerRpcRoute, type RpcHandlers } from './api/routes';
 import { ExportService } from './export/export-service';
 import { createHostLlmGateway } from './export/llm';
@@ -86,8 +88,8 @@ export const Config = {
   },
 } as const;
 
-/** Cordis 服务注入（名称来自树内用法：webServer / llm / sessions） */
-export const inject = ['webServer', 'llm', 'sessions'];
+/** Cordis 服务注入（名称来自树内用法：webServer / llm / sessions / agents） */
+export const inject = ['webServer', 'llm', 'sessions', 'agents'];
 
 /** 数据根：尊重显式配置与 DSH_HOME，不硬编码用户目录 */
 function resolveDataDir(config: SiyuanExportConfig): string {
@@ -102,7 +104,7 @@ export function apply(ctx: Context, config: SiyuanExportConfig): void {
 
     const service = new ExportService({
       source: createSessionOutputSource(ctx),
-      gateway: createHostLlmGateway(ctx.llm as never),
+      gateway: createHostLlmGateway(ctx.llm as never, ctx.agents as never),
       writer: {
         write: async (input) =>
           createNote({

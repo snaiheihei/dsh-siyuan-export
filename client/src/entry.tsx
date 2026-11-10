@@ -72,7 +72,9 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
   const taskRef = useRef<string | null>(null);
 
   const client = (): ExportClient => {
-    if (!clientRef.current) clientRef.current = (props.clientFactory ?? createExportClient)();
+    if (!clientRef.current) {
+      clientRef.current = (props.clientFactory ?? createExportClient)();
+    }
     return clientRef.current;
   };
 
