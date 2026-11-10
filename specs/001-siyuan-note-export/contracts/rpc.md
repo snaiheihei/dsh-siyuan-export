@@ -8,7 +8,7 @@
 - 自定义请求头携带插件内部 nonce（防简单 CSRF/误调）；body 上限 **1 MB**（对齐 body 尺寸上限）。
 - 响应信封统一：`{ ok: true, data }` 或 `{ ok: false, error: { category, message, retryable } }`。
   - `message` 为**用户可读中文文案**；禁止堆栈、内部文件路径、正文秘密（skill：业务错误与传输错误分开）。
-  - `category` 取值 = data-model 错误分类表（`siyuan-auth` / `siyuan-connect` / `siyuan-path` / `llm-adapter` / `llm-quota` / `llm-timeout` / `llm-structure` / `internal`）。
+  - `category` 取值 = data-model 错误分类表（`siyuan-auth` / `siyuan-connect` / `siyuan-path` / `llm-adapter` / `llm-quota` / `llm-timeout` / `llm-structure` / `empty-source` / `internal`）。
 - `recordInput` 审慎设置：导出请求可能含正文引用，命令历史只记 messageId/taskId 等元数据。
 
 ## 方法清单
@@ -18,8 +18,8 @@
 打开弹窗：绑定源消息、恢复偏好、幂等启动生成。
 
 ```ts
-// req
-{ messageId: string, sessionId: string, contentRevision: string }
+// req（contentRevision 不由 Client 传：Host 读取正文后派生，见 data-model §1）
+{ messageId: string, sessionId: string }
 // res (ok)
 { taskId: string,
   status: 'generating' | 'ready' | 'degraded-ready',

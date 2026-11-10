@@ -91,6 +91,7 @@ SingleOutput ──(被引用)── ExportRequest ──(确认后生成)──
 | `llm-adapter` | provider 无 adapter（NO_ADAPTER） | 否（引导检查模型配置） |
 | `llm-quota` / `llm-timeout` | 配额/超时 | 是 |
 | `llm-structure` | 输出不合结构且降级也失败 | 是 |
+| `empty-source` | 回复为空或仅图片，无可导出正文（open 时拒绝，不产生笔记） | 否 |
 
 **持久性**：ExportTask 不持久化（重启后弹窗内状态丢失可接受——内容源是消息本身，重新 open 即可再生）；`Prefs` 持久化。
 

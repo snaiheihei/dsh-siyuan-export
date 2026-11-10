@@ -1,0 +1,4 @@
+- insert:
+    - id: siyuan-export
+      name: 'dsh-siyuan-export'
+      config: {}
