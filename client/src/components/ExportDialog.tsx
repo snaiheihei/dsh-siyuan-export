@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StoragePath } from '../../../src/contract';
-import { isGuideKey, shouldAppendGuide } from '../locales';
+import { isGuideKey, shouldAppendGuide, zh } from '../locales';
 
 export type ExportDialogProps = {
   status: string;
@@ -48,10 +48,11 @@ const PANEL_STYLE: React.CSSProperties = {
   padding: '20px',
   background: 'var(--dsh-panel-bg, #fff)',
   color: 'var(--dsh-panel-fg, #1a1a1a)',
-  boxShadow: '0 12px 40px rgba(0, 0, 0, 0.25)',
+  // app 规范：floats 的阴影也应 faint（原 0 12px 40px .25 过重）
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
   display: 'flex',
   flexDirection: 'column',
-  gap: '14px',
+  gap: '16px',
 };
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -111,16 +112,30 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
   const guideText = (category: string): string | null =>
     isGuideKey(category) ? t(`guide.${category}`) : null;
 
+  /** 当前界面是否中文（服务端 message 固定中文，en 界面只走本地化文案避免混排——Top3-3） */
+  const zhUi = t('dialog.title') === zh['dialog.title'];
+
   const feedbackText = ((): string | null => {
     if (succeeded && target) return `${t('feedback.succeeded')}${target.display}`;
     if (failed && error) {
       const guide = guideText(error.category);
+      if (!zhUi) {
+        // en 界面：本地化 guide 优先；无 guide 的类别用通用句，不透出服务端中文
+        return guide !== null
+          ? `${t('feedback.failed')}${guide}`
+          : `${t('feedback.failedGeneric')}`;
+      }
       const needGuide = guide !== null && shouldAppendGuide(error.message, error.category);
       return needGuide
         ? `${t('feedback.failed')}${error.message}\n${guide}`
         : `${t('feedback.failed')}${error.message}`;
     }
     if (degraded && error) {
+      if (!zhUi) {
+        const guide = guideText(error.category);
+        const base = t('feedback.degradedShort');
+        return guide !== null ? `${base}\n${guide}` : base;
+      }
       const guide = guideText(error.category);
       const needGuide = guide !== null && shouldAppendGuide(error.message, error.category);
       const base = `${t('feedback.degradedPrefix')}${error.message}${t('feedback.degradedSuffix')}`;
@@ -149,11 +164,25 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
             onClick={onClose}
             aria-label={t('dialog.close')}
           >
-            ✕
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M2 2l8 8M10 2L2 10"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
           </button>
         </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <span style={{ fontSize: '12px', opacity: 0.75 }}>{t('field.title')}</span>
           <input
             type="text"
@@ -165,7 +194,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
           />
         </label>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <span style={{ fontSize: '12px', opacity: 0.75 }}>{t('field.target')}</span>
           <div
             data-role="target-display"
@@ -185,7 +214,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
         {feedbackText ? (
           <div
             data-role="feedback"
-            style={{ fontSize: '13px', opacity: 0.85, whiteSpace: 'pre-line' }}
+            style={{ fontSize: '13px', opacity: 1, whiteSpace: 'pre-line' }}
           >
             {feedbackText}
           </div>

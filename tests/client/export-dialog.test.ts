@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { zhT } from '../../client/src/locales';
+import { en, zhT } from '../../client/src/locales';
 import { ExportDialog } from '../../client/src/components/ExportDialog';
 import type { StoragePath } from '../../src/contract';
 
@@ -32,7 +32,7 @@ const TARGET: StoragePath = {
   display: '笔记本 / 父级',
 };
 
-function render(props: Partial<DialogProps> = {}): {
+function render(props: Partial<DialogProps> & { t?: typeof zhT } = {}): {
   element: { props: Record<string, unknown> };
   find: (predicate: (props: Record<string, unknown>) => boolean) => Record<string, unknown> | undefined;
 } {
@@ -177,6 +177,28 @@ describe('ExportDialog（T025）', () => {
       expect(text, category).toContain(`原始消息-${category}`);
       expect(text, category).toMatch(pattern);
     }
+  });
+
+  it('en 界面失败反馈不混排服务端中文（Top3-3：语言分流）', () => {
+    const enT = ((key: Parameters<typeof zhT>[0], params?: Record<string, unknown>) => {
+      let text = (en as Record<string, string>)[String(key)] ?? String(key);
+      if (params) {
+        for (const [name, value] of Object.entries(params)) {
+          text = text.replaceAll(`{${name}}`, String(value));
+        }
+      }
+      return text;
+    }) as typeof zhT;
+    const { find } = render({
+      status: 'failed',
+      error: { category: 'siyuan-auth', message: '思源鉴权失败，请检查 Token', retryable: true },
+      t: enT,
+    });
+    const text = String(find(byRole('feedback'))?.children);
+    expect(text).toContain('Export failed');
+    expect(text).toContain('API token'); // 英文 guide
+    expect(text).not.toContain('鉴权'); // 服务端中文 message 不出现
+    expect(text).not.toContain('Token，');
   });
 
   it('无目标路径时导出禁用', () => {

@@ -21,10 +21,26 @@ export interface DocRow {
   /** 完整祖先链（`/<祖先id>/…/<自身id>.sy`），层级判定的真实依据 */
   path?: string;
   type: string;
+  /** SQL EXISTS 列（1/0）：直接子文档存在性——权威判定（parent_id 恒空不可用） */
+  has_children?: number;
 }
 
 const LIMIT_MIN = 50;
 const LIMIT_MAX = 500;
+
+/**
+ * 直接子文档存在性（真实 bug 修复：parent_id 恒为空 → 旧 childIds 判定恒 false →
+ * UI 永远显示叶子、树无法展开）。判定：path 前缀（去掉 .sy）+ 斜杠数恰好多 1。
+ * 已对真实思源 3.8.9 实测（根层全 1、子层 1/0 混合精确）。
+ */
+const HAS_CHILDREN_COL = `, EXISTS(
+  SELECT 1 FROM blocks c
+  WHERE c.type = 'd' AND c.box = blocks.box
+    AND c.path LIKE substr(blocks.path, 1, length(blocks.path) - 3) || '/%'
+    AND (length(c.path) - length(replace(c.path, '/', ''))) = (length(blocks.path) - length(replace(blocks.path, '/', ''))) + 1
+) AS has_children`;
+
+const SELECT_COLS = 'SELECT id, parent_id, box, hpath, name, path, type';
 
 /** LIMIT 钳制（子文档/根层查询共用）：非法值回落默认，区间 [50, 500] */
 function clampLimit(value: number | undefined): number {
@@ -46,7 +62,7 @@ export function buildChildDocsQuery(input: {
 }): string {
   const limit = clampLimit(input.limit);
   return [
-    'SELECT id, parent_id, box, hpath, name, path, type FROM blocks',
+    `${SELECT_COLS}${HAS_CHILDREN_COL} FROM blocks`,
     `WHERE type = 'd' AND box = '${escapeSql(input.notebookId)}'`,
     `AND path LIKE '/${escapeSql(input.docId)}/%'`,
     `AND instr(substr(path, length('/${escapeSql(input.docId)}/') + 1), '/') = 0`,
@@ -59,7 +75,7 @@ export function buildChildDocsQuery(input: {
 export function buildRootDocsQuery(input: { notebookId: string; limit?: number }): string {
   const limit = clampLimit(input.limit);
   return [
-    'SELECT id, parent_id, box, hpath, name, path, type FROM blocks',
+    `${SELECT_COLS}${HAS_CHILDREN_COL} FROM blocks`,
     `WHERE type = 'd' AND box = '${escapeSql(input.notebookId)}'`,
     "AND (length(path) - length(replace(path, '/', ''))) = 1",
     'ORDER BY hpath ASC, id ASC',
@@ -80,8 +96,8 @@ export function splitHPath(hpath: string): string[] {
 }
 
 /**
- * 行 → 节点。hasChildren 依据同批数据中是否存在 parent_id 命中的文档行
- * （懒加载场景下父节点的子文档尚未加载时为 false，展开时再拉）。
+ * 行 → 节点。hasChildren 优先取 SQL `has_children` 列（权威）；
+ * 列缺失时回退 parent_id 命中（仅测试数据/旧响应）。
  */
 export function mapDocRows(rows: readonly DocRow[], context: { notebookId: string }): TreeNode[] {
   const docs = rows.filter((row) => row.type === 'd');
@@ -91,7 +107,8 @@ export function mapDocRows(rows: readonly DocRow[], context: { notebookId: strin
     name: row.name && row.name.length > 0 ? row.name : (splitHPath(row.hpath).pop() ?? row.id),
     kind: 'doc' as const,
     notebookId: context.notebookId,
-    hasChildren: childIds.has(row.id),
+    hasChildren:
+      row.has_children !== undefined ? row.has_children === 1 : childIds.has(row.id),
     path: splitHPath(row.hpath),
   }));
 }

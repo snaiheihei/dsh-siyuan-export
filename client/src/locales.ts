@@ -31,6 +31,8 @@ export const zh = {
   'feedback.degradedSuffix': '），已使用原文，可继续导出',
   'feedback.generating': '正在生成默认主题名…',
   'feedback.writing': '正在写入思源…',
+  'feedback.failedGeneric': '导出失败，请稍后重试',
+  'feedback.degradedShort': '自动排版失败，已使用原文，仍可继续导出',
   'guide.siyuan-auth': '请在思源「设置 → 鉴权 → API token」复制 Token，并填入插件配置后重试。',
   'guide.siyuan-connect': '请确认思源已启动且端口可访问（默认 127.0.0.1:6806），然后重试。',
   'guide.siyuan-path': '目标路径可能已被删除或无效，请在文档树中重新选择存放位置。',
@@ -72,6 +74,8 @@ export const en = {
   'feedback.degradedSuffix': '); the original text is used and you can still export',
   'feedback.generating': 'Generating default title…',
   'feedback.writing': 'Writing to SiYuan…',
+  'feedback.failedGeneric': 'Export failed, please retry.',
+  'feedback.degradedShort': 'Auto formatting failed; the original text is used.',
   'guide.siyuan-auth':
     'Copy the token from SiYuan Settings → Authentication → API token and put it in the plugin config, then retry.',
   'guide.siyuan-connect':

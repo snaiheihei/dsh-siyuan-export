@@ -60,6 +60,19 @@ describe('buildChildDocsQuery（T027）', () => {
     expect(stmt).not.toContain('parent_id =');
   });
 
+  it('查询带 EXISTS 子计算 has_children（真实 bug 修复：parent_id 恒空导致 UI 永为叶子）', () => {
+    for (const stmt of [
+      buildChildDocsQuery({ notebookId: 'nb-1', docId: 'DOC-1' }),
+      buildRootDocsQuery({ notebookId: 'nb-1' }),
+    ]) {
+      expect(stmt).toContain('EXISTS(');
+      expect(stmt).toContain('AS has_children');
+      // 直接子判定：path 前缀（去.sy）+ 斜杠数恰好多 1
+      expect(stmt).toContain("length(blocks.path) - 3");
+      expect(stmt).toContain("replace(blocks.path, '/', '')");
+    }
+  });
+
   it('LIMIT 为正整数且受上限保护', () => {
     expect(buildChildDocsQuery({ notebookId: 'nb', docId: 'p', limit: 0 })).toContain('LIMIT 50');
     expect(buildChildDocsQuery({ notebookId: 'nb', docId: 'p', limit: 10_000 })).toContain('LIMIT 500');
@@ -87,6 +100,19 @@ describe('mapDocRows（T027）', () => {
     expect(ai!.hasChildren).toBe(true);
     const leaf = nodes.find((n) => n.name === 'Spec-Test-Driven');
     expect(leaf!.hasChildren).toBe(false);
+  });
+
+  it('has_children 列存在时优先于 parent_id 回退（真实语义修复）', () => {
+    const nodes = mapDocRows(
+      [
+        { ...ROWS[0]!, has_children: 1 },
+        { ...ROWS[1]!, has_children: 0 },
+      ],
+      { notebookId: 'nb-1' },
+    );
+    expect(nodes[0]!.hasChildren).toBe(true);
+    // 列说 0 即使 parent_id 命中也视为叶子（列是权威）
+    expect(nodes[1]!.hasChildren).toBe(false);
   });
 
   it('非文档行（type != d）被过滤', () => {

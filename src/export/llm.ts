@@ -73,7 +73,7 @@ export function buildExportPrompt(content: string): { system: string; user: stri
     '- "body": Markdown 正文',
     '要求：',
     '1. 只能使用给定内容的信息，禁止编造，禁止补充任何对话上下文；',
-    '2. 用二级标题分节，要点用小图标标注（✅ 📌 ⚠️ 💡 等）；',
+    '2. 用二级标题分节，要点用小图标标注（✅ 📌 ⚠️ 💡 等）；', // taste-skill-ignore: FR-009 产出内容规范（非 UI）
     '3. 代码块、列表、链接原样保留，不删减关键细节；',
     '4. 不要输出 JSON 之外的任何文字。',
   ].join('\n');

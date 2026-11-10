@@ -13,7 +13,7 @@ import type { StoragePath } from '../contract';
 export const FORMAT_VERSION = 1;
 
 /** 允许的小图标集合（通用表情符号，无需额外资源） */
-export const NOTE_MARKERS = ['✅', '📌', '⚠️', '💡'] as const;
+export const NOTE_MARKERS = ['✅', '📌', '⚠️', '💡'] as const; // taste-skill-ignore: FR-009 笔记正文内容图标（非 UI）
 
 export interface FormatSource {
   sessionId: string;

@@ -67,6 +67,7 @@ export function DocTree(props: DocTreeProps): JSX.Element {
   const [error, setError] = useState<LoadError | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [autoSelectedKey, setAutoSelectedKey] = useState<string | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   const requestRef = useRef(0);
   const initialAppliedRef = useRef(false);
@@ -270,20 +271,33 @@ export function DocTree(props: DocTreeProps): JSX.Element {
   const renderRow = (node: TreeNode, depth: number): JSX.Element => {
     const open = expanded.has(node.id);
     const loading = loadingKey === node.id;
+    const selectedRow = isSelected(node);
+    const hovered = hoverKey === node.id;
     return (
       <div key={node.id}>
         <div
-          style={{ ...ROW_STYLE, paddingLeft: `${6 + depth * 14}px` }}
+          style={{
+            ...ROW_STYLE,
+            paddingLeft: `${6 + depth * 14}px`,
+            // app 规范：selected 用 active 灰底 fill（accent 不上 chrome）
+            background: selectedRow ? 'var(--dsh-active, #eeeeee)' : 'transparent',
+            // hover 用 1px outline，不改 fill（app 规范：No hover that changes the fill）
+            outline: hovered && !selectedRow ? '1px solid var(--dsh-control, #d1d5db)' : 'none',
+            outlineOffset: '-1px',
+          }}
           onClick={() => handleNodeClick(node)}
+          onMouseEnter={() => setHoverKey(node.id)}
+          onMouseLeave={() => setHoverKey((prev) => (prev === node.id ? null : prev))}
           role="treeitem"
           aria-expanded={node.hasChildren ? open : undefined}
+          aria-selected={selectedRow}
         >
           <span style={{ opacity: 0.6 }}>{node.hasChildren ? (open ? '▾' : '▸') : '·'}</span>
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {node.name}
           </span>
-          {isSelected(node) ? (
-            <span style={{ fontSize: '11px', color: 'var(--dsh-accent, #2f6fed)' }}>
+          {selectedRow ? (
+            <span style={{ fontSize: '11px', color: 'inherit', opacity: 0.7 }}>
               {t('tree.selected')}
             </span>
           ) : null}
