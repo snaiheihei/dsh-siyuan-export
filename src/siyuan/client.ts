@@ -42,7 +42,15 @@ function classifyBusinessMessage(msg: string, code: number): SiyuanError {
   if (/auth|token|session|forbidden|login|unauthorized/i.test(msg)) {
     return new SiyuanError('siyuan-auth', AUTH_MESSAGE, false);
   }
-  if (/pathAmbiguous|indexUnavailable|not\s*found|invalid\s*path/i.test(msg)) {
+  // 瞬时索引/元数据未就绪（真实实测 "document metadata is not ready"）→ 可重试
+  if (/metadata is not ready|indexUnavailable/i.test(msg)) {
+    return new SiyuanError(
+      'siyuan-connect',
+      '思源索引元数据尚未就绪，请稍后重试',
+      true,
+    );
+  }
+  if (/pathAmbiguous|not\s*found|invalid\s*path/i.test(msg)) {
     return new SiyuanError('siyuan-path', '思源路径无效（祖先标题可能含 / 或为空），请重新选择存放位置', false);
   }
   return new SiyuanError('internal', `思源返回错误（code ${code}）`, false);
@@ -191,6 +199,36 @@ function joinHPath(parent: string, title: string): string {
 }
 
 /**
+ * 逐级确保父级存在（真实思源 3.8.9 实测：跨级自动创建会报
+ * `document metadata is not ready`，官方亦推荐逐层创建）。
+ * DocTree 选择的路径父级天然存在，本步骤通常只读不写。
+ */
+async function ensureParents(
+  client: SiyuanClient,
+  notebookId: string,
+  parentHPath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const segments = parentHPath.split('/').filter((segment) => segment.length > 0);
+  let current = '';
+  for (const segment of segments) {
+    current += `/${segment}`;
+    const ids = await client.postWithRetry<string[]>(
+      '/api/filetree/getIDsByHPath',
+      { notebook: notebookId, path: current },
+      { signal },
+    );
+    if (!Array.isArray(ids) || ids.length === 0) {
+      await client.postWithRetry<string>(
+        '/api/filetree/createDocWithMd',
+        { notebook: notebookId, path: current, markdown: '' },
+        { signal },
+      );
+    }
+  }
+}
+
+/**
  * T011 · 建文档 + 同名消歧（FR-007 硬保证「不覆盖、独立文档」）：
  * 创建前用 getIDsByHPath 查重，命中依次追加 ` (2)`、` (3)`…；标题内 ASCII `/` 净化为全角 ／。
  */
@@ -202,16 +240,19 @@ export async function createNote(options: CreateNoteOptions): Promise<CreateNote
 
   for (let n = 0; n < max; n += 1) {
     const candidate = n === 0 ? base : `${base} (${n + 1})`;
-    const ids = await client.post<string[]>(
+    // 用 postWithRetry：瞬时错误（如真实实测的 "document metadata is not ready"）自动退避重试
+    const ids = await client.postWithRetry<string[]>(
       '/api/filetree/getIDsByHPath',
       { notebook: notebookId, path: candidate },
-      signal,
+      { signal },
     );
     if (!Array.isArray(ids) || ids.length === 0) {
-      const id = await client.post<string>(
+      // 目标不存在 → 先确保父级链存在（首层命中后后续均为只读）
+      await ensureParents(client, notebookId, options.parentHPath, signal);
+      const id = await client.postWithRetry<string>(
         '/api/filetree/createDocWithMd',
         { notebook: notebookId, path: candidate, markdown },
-        signal,
+        { signal },
       );
       return { id, hpath: candidate };
     }

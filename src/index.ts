@@ -17,6 +17,7 @@ import { ExportService } from './export/export-service';
 import { createHostLlmGateway } from './export/llm';
 import { createSessionOutputSource } from './export/session-source';
 import { SiyuanClient, createNote } from './siyuan/client';
+import { createTreeService } from './siyuan/tree';
 import { PrefsStore } from './store/prefs';
 
 export interface SiyuanExportConfig {
@@ -121,7 +122,17 @@ export function apply(ctx: Context, config: SiyuanExportConfig): void {
       commit: (request) =>
         service.commit({ taskId: request.taskId, title: request.title, target: request.target }),
       cancel: (request) => service.cancel(request.taskId),
-      treeList: async () => ({ nodes: [] }), // US2（T029/T030）实现文档树
+      // US2（T030）：真实文档树 —— 根层 lsNotebooks+根文档查询、其余按 path 前缀懒加载
+      treeList: async (request) => {
+        const tree = createTreeService(client);
+        const notebookId = request.notebookId;
+        const docId = request.docId;
+        if (notebookId === undefined || notebookId === '') {
+          return { nodes: await tree.listNotebooks() };
+        }
+        // 根层文档：docId 缺省/空 → buildRootDocsQuery；有 docId → 直接子文档
+        return { nodes: await tree.listChildren({ notebookId, docId: docId ?? '' }) };
+      },
     };
 
     const disposeRoute = registerRpcRoute(ctx.webServer as never, handlers);

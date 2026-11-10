@@ -82,3 +82,37 @@ node "<dsh-repo>\apps\cli\lib\bin.js" --profile web --dump-config   # 仅证 bun
 ## 清理
 
 停止自己启动的测试 Host → 确认测试端口不再监听 → 从隔离 profile 移除插件 → 清理临时 Token 与测试数据；真实 `$DSH_HOME` 的 dump/诊断不外发。
+
+---
+
+## 执行记录（2026-11-10 · implement 阶段）
+
+> 图例：✅ 自动化已通过（当次会话命令输出）　⏳ 待手工/需真实模型或浏览器
+
+| 场景 | 状态 | 证据 / 说明 |
+|---|---|---|
+| V0 构建与隔离安装 | ✅ | `npm pack` → 隔离 `plugin add` exit 0 → `--dump-config` 入选无 skip → 冷启动 200（T009/T026/T033 三次执行） |
+| V1 消息行按钮渲染 | ⏳ | 注册路径单测覆盖（T008 2/2）+ 产物含 slot key（T026）；**真实对话中按钮出现需浏览器手工核验** |
+| V2 标题部分（打开<1s、回填不覆盖） | ✅（逻辑）/ ⏳（渲染） | 逻辑单测 T025 9/9 + T016；树部分三层 E2E 真实数据（T033）；浏览器计时待手工 |
+| V2 树逐层展开与默认路径 | ✅ | 隔离 Host `tree.list` 三层真实：1 本 → 18 根文档 → /AI 下 9 子文档（T033） |
+| V3 真实写入思源 | ✅ | 真实思源 E2E：createNote 落盘 + 回读 + formatNote 元数据随文（siyuan-real.test.ts） |
+| V4 幂等防重 | ✅ | T016 幂等 open / writing 拒绝 + T019 集成（同键只调一次 LLM） |
+| V5A 真实模型小请求 | ⏳ | 隔离环境无模型凭据；**需在已配模型的环境点一次导出核验**（prepareCall→stream 全链） |
+| V5B FR-013 输入复核 | ✅ | 负向断言 T017 4/4 + 集成捕获 T019（messages 精确等于单次输出包裹） |
+| V6a 连接失败→恢复重试 | ✅ | 真实 E2E：错误 endpoint → `siyuan-connect` 可重试（siyuan-real.test.ts） |
+| V6b LLM 失败→降级 | ✅ | 单测 T016：timeout/structure-bad → `degraded-ready` 首行标题仍可导出 |
+| V6c 生成中关闭→无半成品 | ✅ | 单测 T016/T035：cancel 中止、晚到结果不覆盖 |
+| V6d 目标路径失效 | ✅（分类）/ ⏳（真实删除场景） | `pathAmbiguous`/404 → `siyuan-path` 单测覆盖；真实删路径重选待手工 |
+| V7 同名两次独立文档 | ✅ | 真实思源：`/同名测试` + `/同名测试 (2)` 两篇独立落盘；同 path 直接重复语义已实测 |
+| V7 长回复不截断 | ✅（结构）/ ⏳（数万字真实） | body 1MB 上限单测；数万字真实导出待手工 |
+| SC-001 ≤3 点击/弹窗<1s | ⏳ | 需浏览器计时手工核验 |
+| SC-002 95% <30s | ⏳ | 需真实模型导出计时 |
+| SC-003/004 抽样评估 | ⏳ | 需真实模型产出后人工抽样 |
+| 隔离环境清理纪律 | ✅ | 三次 E2E 均用完即 teardown（端口释放、目录删除、测试文档 removeDocByID 清零） |
+
+**本阶段实测纠正（进入实现前未知的真实行为）**：
+1. `document metadata is not ready` 为瞬时错误 → 分类 `siyuan-connect` 可重试（原按 `indexUnavailable` 归 path 不可重试）
+2. 跨级路径自动创建不可靠 → `createNote` 逐级 ensure 父级（DocTree 选的已存在路径通常零额外写）
+3. `removeDocByID {id}` 才是按 id 删除的官方签名（`removeDoc` 要 `.sy` 存储路径）
+4. 根层文档判定 = path 斜杠数 1；`lsNotebooks` 返回 `{notebooks:[…]}` 包装对象
+

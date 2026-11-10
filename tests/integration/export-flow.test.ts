@@ -66,10 +66,12 @@ describe('导出全流程集成（T019）', () => {
     expect(result.status).toBe('succeeded');
     expect(result.href).toContain('siyuan://blocks/');
 
-    // 思源侧落盘断言
-    expect(siyuan.docs).toHaveLength(1);
-    expect(siyuan.docs[0]!.path).toBe('/父级/导出标题');
-    const createReq = siyuan.requests.find((r) => r.path === '/api/filetree/createDocWithMd');
+    // 思源侧落盘断言（逐级 ensure：父级链也会被确保存在——真实思源 3.8.9 实测语义）
+    expect(siyuan.docs.map((doc) => doc.path)).toContain('/父级/导出标题');
+    expect(siyuan.docs.map((doc) => doc.path)).toContain('/父级');
+    const createReq = siyuan.requests.find(
+      (r) => r.path === '/api/filetree/createDocWithMd' && r.body.path === '/父级/导出标题',
+    );
     expect(createReq).toBeDefined();
     const markdown = String(createReq!.body.markdown);
     expect(markdown).toContain('## 小节'); // fake-llm 输出的分节

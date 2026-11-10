@@ -121,6 +121,17 @@ describe('SiyuanClient.post', () => {
     expect(path.retryable).toBe(false);
   });
 
+  it('瞬时索引未就绪（真实实测 "document metadata is not ready"）→ siyuan-connect 可重试', async () => {
+    const err = await expectSiyuanError(
+      makeClient(
+        queuedFake([jsonResponse(200, { code: -1, msg: 'document metadata is not ready' })]).fetchImpl,
+      ).post('/api/x', {}),
+    );
+    expect(err.category).toBe('siyuan-connect');
+    expect(err.retryable).toBe(true);
+    expect(err.message).toContain('稍后重试');
+  });
+
   it('200 + code!=0 未知类 → internal，不透传原始 msg（防路径泄漏）但带 code', async () => {
     const err = await expectSiyuanError(
       makeClient(
@@ -195,8 +206,8 @@ describe('SiyuanClient.post', () => {
 describe('createNote（T011 同名消歧）', () => {
   const ok = (data: unknown) => jsonResponse(200, { code: 0, msg: '', data });
 
-  it('无同名 → 直接创建，path = /父级/标题；markdown 原样传递', async () => {
-    const { fetchImpl, calls } = queuedFake([ok([]), ok('doc-1')]);
+  it('无同名 → 先确保父级链存在再创建，path = /父级/标题；markdown 原样传递', async () => {
+    const { fetchImpl, calls } = queuedFake([ok([]), ok([]), ok('parent-id'), ok('doc-1')]);
     const result = await createNote({
       client: makeClient(fetchImpl),
       notebookId: 'nb-1',
@@ -205,13 +216,16 @@ describe('createNote（T011 同名消歧）', () => {
       markdown: '# hi',
     });
     expect(result).toEqual({ id: 'doc-1', hpath: '/父级/标题' });
-    expect(calls).toHaveLength(2);
+    // 调用序列：目标查重 → 父级查重 → 父级创建（空内容）→ 目标创建
+    expect(calls).toHaveLength(4);
     expect(calls[0]!.body).toMatchObject({ notebook: 'nb-1', path: '/父级/标题' });
-    expect(calls[1]!.body).toMatchObject({ notebook: 'nb-1', path: '/父级/标题', markdown: '# hi' });
+    expect(calls[1]!.body).toMatchObject({ notebook: 'nb-1', path: '/父级' });
+    expect(calls[2]!.body).toMatchObject({ notebook: 'nb-1', path: '/父级', markdown: '' });
+    expect(calls[3]!.body).toMatchObject({ notebook: 'nb-1', path: '/父级/标题', markdown: '# hi' });
   });
 
   it('已有同名 → 依次尝试 (2) 后缀再建', async () => {
-    const { fetchImpl, calls } = queuedFake([ok(['existing-id']), ok([]), ok('doc-2')]);
+    const { fetchImpl, calls } = queuedFake([ok(['existing-id']), ok([]), ok([]), ok('parent-id'), ok('doc-2')]);
     const result = await createNote({
       client: makeClient(fetchImpl),
       notebookId: 'nb-1',
@@ -221,7 +235,8 @@ describe('createNote（T011 同名消歧）', () => {
     });
     expect(result.id).toBe('doc-2');
     expect(result.hpath).toBe('/父级/标题 (2)');
-    expect(calls[1]!.body.path).toBe('/父级/标题 (2)');
+    const creates = calls.filter((c) => c.url.includes('createDocWithMd'));
+    expect(creates[creates.length - 1]!.body.path).toBe('/父级/标题 (2)');
   });
 
   it("标题含 / → 净化为全角 ／（防 pathAmbiguous）", async () => {

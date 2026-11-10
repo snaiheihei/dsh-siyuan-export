@@ -146,7 +146,25 @@ export class ExportService {
 
     const existing = this.tasks.get(key);
     if (existing) {
-      return this.toOpenData(existing);
+      // 终态处理（spec edge「同一条回复连续导出到不同路径 → 各自独立成文」）：
+      // - succeeded → 重置 ready（复用缓存 body，允许再次导出，不重调 LLM 省 token）
+      // - cancelled → 重新生成（清空缓存，重新走 LLM）
+      // - failed → 保留（直接重试，复用缓存 body）
+      // - 其余状态 → 原样返回（幂等）
+      if (existing.status === 'succeeded') {
+        existing.status = 'ready';
+        existing.error = null;
+      } else if (existing.status === 'cancelled') {
+        existing.status = 'generating';
+        existing.body = null;
+        existing.title = null;
+        existing.error = null;
+        const retryAbort = new AbortController();
+        existing.abort = retryAbort;
+        void this.generate(existing, retryAbort.signal);
+      }
+      const prefs = await this.deps.prefs.read().catch(() => ({ lastPath: null }));
+      return { ...this.toOpenData(existing), lastPath: prefs.lastPath };
     }
 
     const task: TaskState = {

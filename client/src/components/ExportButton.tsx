@@ -2,23 +2,26 @@
  * T023 · 导出按钮（挂在助手消息操作栏 slot）
  *
  * 纪律：loading 时禁用避免重复点击（表现层）；Host 侧另有权威防重。
+ * 文案经 `siyuan-export` locale 命名空间的 `t` seat（T038），不再硬编码。
  */
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 
-export interface ExportButtonProps {
+export type ExportButtonProps = {
   messageId: string;
   loading?: boolean;
   onExport: (messageId: string) => void;
-}
+} & PropsLocale<'siyuan-export'>;
 
 export function ExportButton(props: ExportButtonProps): JSX.Element {
-  const { messageId, loading = false, onExport } = props;
+  const { messageId, loading = false, onExport, t } = props;
+  const label = loading ? t('button.exporting') : t('button.export');
   return (
     <button
       type="button"
       data-siyuan-export="button"
       data-role="export-button"
-      aria-label="导出到思源"
-      title="导出到思源"
+      aria-label={t('button.export')}
+      title={t('button.export')}
       disabled={loading}
       onClick={() => {
         if (loading) return;
@@ -39,7 +42,7 @@ export function ExportButton(props: ExportButtonProps): JSX.Element {
         padding: '2px 6px',
       }}
     >
-      {loading ? '导出中…' : '导出到思源'}
+      {label}
     </button>
   );
 }

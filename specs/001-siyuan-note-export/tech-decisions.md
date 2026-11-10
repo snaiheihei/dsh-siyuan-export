@@ -51,10 +51,10 @@
 
 ## 环境准备清单
 
-- [ ] Node.js + 包管理器 —— 构建插件 Host/Client 产物（本机已有，不计入选型）
-- [ ] 思源 API Token（设置 → 鉴权 → API token，现行位置）—— HTTP API 认证，一次性配置
-- [ ] 思源本机服务（默认 `localhost:6806`）—— 写入目标；数据目录 `C:\Users\503247565\Downloads\siyuan_workspace` 仅作集成测试读取素材与直写候选评估
-- [ ] 隔离 `DSH_HOME`（web profile）—— 插件隔离安装验证，不碰真实环境
+- [x] Node.js + 包管理器 —— 构建插件 Host/Client 产物（本机已有，不计入选型）
+- [x] 思源 API Token（设置 → 鉴权 → API token，现行位置）—— HTTP API 认证，一次性配置（本机未开鉴权，留空即可用）
+- [x] 思源本机服务（默认 `localhost:6806`）—— 写入目标；数据目录 `C:\Users\503247565\Downloads\siyuan_workspace` 仅作集成测试读取素材与直写候选评估
+- [x] 隔离 `DSH_HOME`（web profile）—— 插件隔离安装验证，不碰真实环境（脚本已建并三次 E2E 使用）
 - [ ] npm 运行时依赖：**0 个**（推荐组合下）
 
 ## 是否升级为 ADR

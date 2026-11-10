@@ -1,0 +1,320 @@
+/**
+ * T031/T032 · 思源文档树选择器
+ *
+ * 交互：单击节点 = 选中该层为落点 +（若有子）展开并懒加载下一层。
+ * 纪律（contracts/rpc.md + develop-dsh-plugin §7）：
+ *  - 懒加载：根层 onLoadRoot（笔记本），展开按层 onLoadChildren（tree.list 懒加载语义）
+ *  - stale 响应丢弃：慢的旧请求不覆盖新状态（requestId 比对）
+ *  - initialPath 逐层展开并默认选中（T032：上次成功路径）
+ *  - initialPath 为空时默认选中第一个笔记本根（spec：笔记本根可直接导出）
+ *  - 加载失败就地显示原因并可重试（FR-010）
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
+import type { StoragePath, TreeNode } from '../../../src/contract';
+
+export type DocTreeProps = {
+  /** 上次成功路径（Prefs.lastPath）；null = 首次导出 */
+  initialPath: StoragePath | null;
+  /** 外部控制的选中态（用于回显） */
+  selected: StoragePath | null;
+  /** 根层加载（笔记本列表） */
+  onLoadRoot: () => Promise<TreeNode[]>;
+  /** 按层加载子文档；docId 为空串表示笔记本根层 */
+  onLoadChildren: (notebookId: string, docId: string) => Promise<TreeNode[]>;
+  onSelected: (target: StoragePath) => void;
+} & PropsLocale<'siyuan-export'>;
+
+interface LoadError {
+  key: string;
+  notebookId: string;
+  docId: string;
+  message: string;
+}
+
+const ROW_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: '6px',
+  padding: '4px 6px',
+  borderRadius: '6px',
+  cursor: 'pointer',
+  fontSize: '13px',
+};
+
+const BUTTON_STYLE: React.CSSProperties = {
+  borderRadius: '6px',
+  border: '1px solid var(--dsh-border, #d0d0d0)',
+  background: 'var(--dsh-button-bg, #f3f3f3)',
+  color: 'inherit',
+  padding: '2px 8px',
+  fontSize: '12px',
+  cursor: 'pointer',
+};
+
+function samePath(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((segment, index) => segment === b[index]);
+}
+
+export function DocTree(props: DocTreeProps): JSX.Element {
+  const { initialPath, selected, onLoadRoot, onLoadChildren, t } = props;
+
+  const [roots, setRoots] = useState<TreeNode[] | null>(null);
+  const [childrenMap, setChildrenMap] = useState<Record<string, TreeNode[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [error, setError] = useState<LoadError | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [autoSelectedKey, setAutoSelectedKey] = useState<string | null>(null);
+
+  const requestRef = useRef(0);
+  const initialAppliedRef = useRef(false);
+  // onSelected 在初始化 effect 中使用最新引用（一次性初始化，避免 effect 重跑）
+  const selectedRef = useRef(props.onSelected);
+  selectedRef.current = props.onSelected;
+
+  const buildTarget = useCallback(
+    (node: TreeNode): StoragePath => {
+      if (node.kind === 'notebook') {
+        return {
+          notebookId: node.id,
+          notebookName: node.name,
+          parentSegments: [],
+          display: node.name,
+        };
+      }
+      const notebookName = roots?.find((n) => n.id === node.notebookId)?.name ?? node.notebookId;
+      return {
+        notebookId: node.notebookId,
+        notebookName,
+        parentSegments: node.path,
+        display: node.path.length > 0 ? `${notebookName} / ${node.path.join(' / ')}` : notebookName,
+      };
+    },
+    [roots],
+  );
+
+  const loadChildren = useCallback(
+    async (key: string, notebookId: string, docId: string): Promise<void> => {
+      const requestId = ++requestRef.current;
+      setLoadingKey(key);
+      setError(null);
+      try {
+        const nodes = await onLoadChildren(notebookId, docId);
+        if (requestId !== requestRef.current) return; // stale：丢弃旧响应
+        setChildrenMap((prev) => ({ ...prev, [key]: nodes }));
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(key);
+          return next;
+        });
+      } catch (err) {
+        if (requestId !== requestRef.current) return;
+        setError({
+          key,
+          notebookId,
+          docId,
+          message: err instanceof Error ? err.message : '加载失败',
+        });
+      } finally {
+        if (requestId === requestRef.current) setLoadingKey(null);
+      }
+    },
+    [onLoadChildren],
+  );
+
+  const loadRoot = useCallback(async (): Promise<TreeNode[] | null> => {
+    const requestId = ++requestRef.current;
+    setLoadingKey('root');
+    setError(null);
+    try {
+      const nodes = await onLoadRoot();
+      if (requestId !== requestRef.current) return null;
+      setRoots(nodes);
+      return nodes;
+    } catch (err) {
+      if (requestId === requestRef.current) {
+        setError({
+          key: 'root',
+          notebookId: '',
+          docId: '',
+          message: err instanceof Error ? err.message : '加载失败',
+        });
+      }
+      return null;
+    } finally {
+      if (requestId === requestRef.current) setLoadingKey(null);
+    }
+  }, [onLoadRoot]);
+
+  // 初始化：加载根层 + initialPath 逐层展开（T032）或默认选中首个笔记本根
+  useEffect(() => {
+    if (initialAppliedRef.current) return;
+    initialAppliedRef.current = true;
+    void (async () => {
+      const nodes = await loadRoot();
+      if (!nodes || nodes.length === 0) return;
+
+      if (initialPath) {
+        const notebook = nodes.find((n) => n.id === initialPath.notebookId);
+        if (!notebook) return;
+        const requestId = ++requestRef.current;
+        // 第一层：笔记本根文档
+        let current: TreeNode[];
+        try {
+          current = await onLoadChildren(notebook.id, '');
+        } catch (err) {
+          if (requestId === requestRef.current) {
+            setError({
+              key: notebook.id,
+              notebookId: notebook.id,
+              docId: '',
+              message: err instanceof Error ? err.message : '加载失败',
+            });
+          }
+          return;
+        }
+        if (requestId !== requestRef.current) return;
+        setChildrenMap((prev) => ({ ...prev, [notebook.id]: current }));
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(notebook.id);
+          return next;
+        });
+
+        // 逐层向下匹配 parentSegments
+        let matched: TreeNode | null = null;
+        for (let depth = 1; depth <= initialPath.parentSegments.length; depth += 1) {
+          const prefix = initialPath.parentSegments.slice(0, depth);
+          matched = current.find((node) => samePath(node.path, prefix)) ?? null;
+          if (!matched) break;
+          if (matched.path.length === initialPath.parentSegments.length) break;
+          setExpanded((prev) => {
+            const next = new Set(prev);
+            next.add(matched!.id);
+            return next;
+          });
+          try {
+            current = await onLoadChildren(matched.notebookId, matched.id);
+          } catch {
+            return; // 中途失败：保持已展开部分，错误由行内重试兜底
+          }
+          if (requestId !== requestRef.current) return;
+          setChildrenMap((prev) => ({ ...prev, [matched!.id]: current }));
+        }
+        if (matched && samePath(matched.path, initialPath.parentSegments)) {
+          setAutoSelectedKey(matched.id);
+          selectedRef.current(
+            matched.kind === 'notebook'
+              ? {
+                  notebookId: matched.id,
+                  notebookName: matched.name,
+                  parentSegments: [],
+                  display: matched.name,
+                }
+              : initialPath,
+          );
+        }
+        return;
+      }
+
+      // 首次导出（lastPath=null）：默认选中第一个笔记本根，使「笔记本根可直接导出」
+      const first = nodes[0]!;
+      setAutoSelectedKey(first.id);
+      selectedRef.current({
+        notebookId: first.id,
+        notebookName: first.name,
+        parentSegments: [],
+        display: first.name,
+      });
+    })();
+    // 一次性初始化（effect 仅在挂载时执行一次）
+  }, []);
+
+  const handleNodeClick = (node: TreeNode): void => {
+    const target = buildTarget(node);
+    setAutoSelectedKey(node.id);
+    props.onSelected(target);
+    if (node.kind === 'notebook') {
+      const key = node.id;
+      if (!childrenMap[key]) void loadChildren(key, node.id, '');
+      else
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(key);
+          return next;
+        });
+    } else if (node.hasChildren) {
+      const key = node.id;
+      if (!childrenMap[key]) void loadChildren(key, node.notebookId, node.id);
+      else
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.add(key);
+          return next;
+        });
+    }
+  };
+
+  const retry = (): void => {
+    if (!error) return;
+    if (error.key === 'root') void loadRoot();
+    else void loadChildren(error.key, error.notebookId, error.docId);
+  };
+
+  const isSelected = (node: TreeNode): boolean => {
+    const target = buildTarget(node);
+    return (
+      autoSelectedKey === node.id ||
+      (selected !== null && selected.display === target.display)
+    );
+  };
+
+  const renderRow = (node: TreeNode, depth: number): JSX.Element => {
+    const open = expanded.has(node.id);
+    const loading = loadingKey === node.id;
+    return (
+      <div key={node.id}>
+        <div
+          style={{ ...ROW_STYLE, paddingLeft: `${6 + depth * 14}px` }}
+          onClick={() => handleNodeClick(node)}
+          role="treeitem"
+          aria-expanded={node.hasChildren ? open : undefined}
+        >
+          <span style={{ opacity: 0.6 }}>{node.hasChildren ? (open ? '▾' : '▸') : '·'}</span>
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {node.name}
+          </span>
+          {isSelected(node) ? (
+            <span style={{ fontSize: '11px', color: 'var(--dsh-accent, #2f6fed)' }}>
+              {t('tree.selected')}
+            </span>
+          ) : null}
+          {loading ? (
+            <span style={{ fontSize: '11px', opacity: 0.6 }}>{t('tree.loading')}</span>
+          ) : null}
+        </div>
+        {open && childrenMap[node.id] ? (
+          <div>{childrenMap[node.id]!.map((child) => renderRow(child, depth + 1))}</div>
+        ) : null}
+      </div>
+    );
+  };
+
+  return (
+    <div data-role="doc-tree" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      {error ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+          <span style={{ color: 'var(--dsh-danger, #c0392b)' }}>{error.message}</span>
+          <button type="button" style={BUTTON_STYLE} onClick={retry}>
+            {t('tree.retry')}
+          </button>
+        </div>
+      ) : null}
+      {roots === null && !error ? (
+        <div style={{ fontSize: '12px', opacity: 0.6 }}>{t('tree.loading')}</div>
+      ) : null}
+      {roots?.map((node) => renderRow(node, 0))}
+    </div>
+  );
+}

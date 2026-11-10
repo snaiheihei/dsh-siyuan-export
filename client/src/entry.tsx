@@ -13,12 +13,19 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-ui-slots';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client';
-import type { StoragePath } from '../../src/contract';
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
+import type { StoragePath, TreeNode } from '../../src/contract';
 import { ExportButton } from './components/ExportButton';
+import { DocTree } from './components/DocTree';
 import { ExportDialog } from './components/ExportDialog';
+// type-only：拉入 siyuan-export 命名空间的 LocaleNamespaceMap 合并
+import type {} from './locales';
 import { ClientRpcError, createExportClient, type ExportClient } from './rpc';
 
 const SLOT_KEY = 'conversation.chat.assistant-actions' as const;
+
+/** locale 命名空间（client/src/locales.ts 声明键集） */
+const NS = 'siyuan-export';
 
 export const inject = ['slots'];
 
@@ -32,11 +39,8 @@ interface DialogState {
   error: { category: string; message: string; retryable: boolean } | null;
 }
 
-/** slot owner 提供的 props（Research R1：owner = { messageId }） */
-interface SlotProps {
-  messageId: string;
-  sessionId?: string;
-}
+/** slot owner 提供的 props + locale seat（Research R1：owner = { messageId }） */
+type SiyuanExportActionProps = PropsRuntime<typeof SLOT_KEY> & PropsLocale<'siyuan-export'>;
 
 function toErrorInfo(err: unknown): { category: string; message: string; retryable: boolean } {
   if (err instanceof ClientRpcError) {
@@ -48,7 +52,8 @@ function toErrorInfo(err: unknown): { category: string; message: string; retryab
 /**
  * 导出按钮 + 弹窗容器（每个消息行一个实例，但弹窗只渲染一个）
  */
-export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
+export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element | null {
+  const { messageId, sessionId, t } = props;
   const clientRef = useRef<ExportClient | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,7 +68,7 @@ export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
     async (messageId: string) => {
       setLoading(true);
       try {
-        const opened = await client().open({ messageId, sessionId: props.sessionId ?? '' });
+        const opened = await client().open({ messageId, sessionId: sessionId ?? '' });
         taskRef.current = opened.taskId;
         setDialog({
           taskId: opened.taskId,
@@ -141,7 +146,7 @@ export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
 
   return (
     <>
-      <ExportButton messageId={props.messageId} loading={loading} onExport={(id) => void startExport(id)} />
+      <ExportButton messageId={messageId} loading={loading} t={t} onExport={(id) => void startExport(id)} />
       {dialog ? (
         <ExportDialog
           status={dialog.status}
@@ -150,6 +155,7 @@ export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
           lastPath={dialog.lastPath}
           error={dialog.error}
           titleEdited={dialog.titleEdited}
+          t={t}
           onTitleChange={(value) =>
             setDialog((prev) => (prev ? { ...prev, title: value, titleEdited: true } : prev))
           }
@@ -157,7 +163,20 @@ export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
           onSubmit={() => void submit()}
           onRetry={() => void retry()}
           onClose={close}
-        />
+        >
+          <DocTree
+            initialPath={dialog.lastPath}
+            selected={dialog.target}
+            t={t}
+            onLoadRoot={async (): Promise<TreeNode[]> => (await client().treeList({})).nodes}
+            onLoadChildren={async (notebookId: string, docId: string): Promise<TreeNode[]> =>
+              (await client().treeList({ notebookId, docId })).nodes
+            }
+            onSelected={(target) =>
+              setDialog((prev) => (prev ? { ...prev, target } : prev))
+            }
+          />
+        </ExportDialog>
       ) : null}
     </>
   );
@@ -165,6 +184,9 @@ export function SiyuanExportAction(props: SlotProps): JSX.Element | null {
 
 export function apply(ctx: Context): void {
   ctx.slots.inject(SLOT_KEY, () =>
-    ctx.slots.register({ name: SLOT_KEY, id: 'siyuan-export', order: 100 }, SiyuanExportAction),
+    ctx.slots.register(
+      { name: SLOT_KEY, id: 'siyuan-export', order: 100, locale: NS },
+      SiyuanExportAction,
+    ),
   );
 }

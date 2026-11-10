@@ -6,11 +6,14 @@
  *  - 存放路径显示与选择入口（US2 挂载 DocTree）
  *  - 状态反馈：generating 占位 / ready 可导出 / degraded-ready 降级提示 /
  *    succeeded 落点 / failed 原因 + 重试（保留已填字段）
+ * 文案经 `siyuan-export` locale 命名空间的 `t` seat（T038），不再硬编码。
  */
 import type { ReactNode } from 'react';
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StoragePath } from '../../../src/contract';
+import { isGuideKey } from '../locales';
 
-export interface ExportDialogProps {
+export type ExportDialogProps = {
   status: string;
   title: string;
   target: StoragePath | null;
@@ -25,7 +28,7 @@ export interface ExportDialogProps {
   onClose: () => void;
   /** US2：文档树选择区挂载点 */
   children?: ReactNode;
-}
+} & PropsLocale<'siyuan-export'>;
 
 const OVERLAY_STYLE: React.CSSProperties = {
   position: 'fixed',
@@ -91,6 +94,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
     onRetry,
     onClose,
     children,
+    t,
   } = props;
 
   const generating = status === 'generating';
@@ -100,45 +104,69 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
   const degraded = status === 'degraded-ready';
   const canSubmit = (status === 'ready' || degraded) && target !== null && !writing;
 
+  /**
+   * 四类错误的行动指引（T036，FR-010）：失败时展示在原因之后，
+   * 让用户知道「下一步做什么」——与服务端 message（具体原因）互补。
+   */
+  const guideText = (category: string): string | null =>
+    isGuideKey(category) ? t(`guide.${category}`) : null;
+
   const feedbackText = ((): string | null => {
-    if (succeeded && target) return `已导出到：${target.display}`;
-    if (failed && error) return `导出失败：${error.message}`;
-    if (degraded && error) return `未能自动排版（${error.message}），已使用原文，可继续导出`;
-    if (generating) return '正在生成默认主题名…';
-    if (writing) return '正在写入思源…';
+    if (succeeded && target) return `${t('feedback.succeeded')}${target.display}`;
+    if (failed && error) {
+      const guide = guideText(error.category);
+      const needGuide = guide !== null && !error.message.includes(guide.slice(0, 6));
+      return needGuide
+        ? `${t('feedback.failed')}${error.message}\n${guide}`
+        : `${t('feedback.failed')}${error.message}`;
+    }
+    if (degraded && error) {
+      const guide = guideText(error.category);
+      const needGuide = guide !== null && !error.message.includes(guide.slice(0, 6));
+      const base = `${t('feedback.degradedPrefix')}${error.message}${t('feedback.degradedSuffix')}`;
+      return needGuide ? `${base}\n${guide}` : base;
+    }
+    if (generating) return t('feedback.generating');
+    if (writing) return t('feedback.writing');
     return null;
   })();
 
+  const targetText = target
+    ? target.display
+    : lastPath
+      ? t('field.targetLast', { path: lastPath.display })
+      : t('field.targetEmpty');
+
   return (
     <div style={OVERLAY_STYLE} data-role="export-dialog-overlay">
-      <div style={PANEL_STYLE} role="dialog" aria-label="导出到思源">
+      <div style={PANEL_STYLE} role="dialog" aria-label={t('dialog.title')}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <strong style={{ fontSize: '15px' }}>导出到思源</strong>
+          <strong style={{ fontSize: '15px' }}>{t('dialog.title')}</strong>
           <button
             type="button"
             data-role="close"
             style={BUTTON_STYLE}
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('dialog.close')}
           >
             ✕
           </button>
         </div>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <span style={{ fontSize: '12px', opacity: 0.75 }}>主题名</span>
+          <span style={{ fontSize: '12px', opacity: 0.75 }}>{t('field.title')}</span>
           <input
             type="text"
             value={title}
             disabled={generating || succeeded}
-            placeholder={generating ? '正在生成默认主题名…' : '请输入笔记标题'}
+            placeholder={generating ? t('field.titleGenerating') : t('field.titlePlaceholder')}
             onChange={(event) => onTitleChange(event.target.value)}
             style={INPUT_STYLE}
           />
         </label>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <span style={{ fontSize: '12px', opacity: 0.75 }}>存放位置</span>
+          <span style={{ fontSize: '12px', opacity: 0.75 }}>{t('field.target')}</span>
           <div
             data-role="target-display"
             style={{
@@ -149,13 +177,16 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
               minHeight: '34px',
             }}
           >
-            {target ? target.display : lastPath ? `未选择（上次：${lastPath.display}）` : '未选择'}
+            {targetText}
           </div>
           {children}
         </div>
 
         {feedbackText ? (
-          <div data-role="feedback" style={{ fontSize: '13px', opacity: 0.85 }}>
+          <div
+            data-role="feedback"
+            style={{ fontSize: '13px', opacity: 0.85, whiteSpace: 'pre-line' }}
+          >
             {feedbackText}
           </div>
         ) : null}
@@ -163,7 +194,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           {failed && error?.retryable ? (
             <button type="button" data-role="retry" style={BUTTON_STYLE} onClick={onRetry}>
-              重试
+              {t('submit.retry')}
             </button>
           ) : null}
           <button
@@ -173,7 +204,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
             disabled={!canSubmit}
             onClick={onSubmit}
           >
-            {writing ? '导出中…' : '导出'}
+            {writing ? t('submit.exporting') : t('submit.export')}
           </button>
         </div>
       </div>

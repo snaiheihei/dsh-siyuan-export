@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { zhT } from '../../client/src/locales';
 import { ExportButton } from '../../client/src/components/ExportButton';
 
 /**
@@ -19,10 +20,11 @@ function render(props: Partial<ButtonProps> = {}): {
   element: { type: string; props: Record<string, unknown> };
   click: () => void;
 } {
-  const merged: ButtonProps = {
+  const merged: ButtonProps & { t: typeof zhT } = {
     messageId: 'm1',
     loading: false,
     onExport: () => {},
+    t: zhT,
     ...props,
   };
   const element = ExportButton(merged) as unknown as {

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { zhT } from '../../client/src/locales';
 import { ExportDialog } from '../../client/src/components/ExportDialog';
 import type { StoragePath } from '../../src/contract';
 
@@ -35,7 +36,7 @@ function render(props: Partial<DialogProps> = {}): {
   element: { props: Record<string, unknown> };
   find: (predicate: (props: Record<string, unknown>) => boolean) => Record<string, unknown> | undefined;
 } {
-  const merged: DialogProps = {
+  const merged: DialogProps & { t: typeof zhT } = {
     status: 'ready',
     title: 'LLM 标题',
     target: TARGET,
@@ -47,6 +48,7 @@ function render(props: Partial<DialogProps> = {}): {
     onSubmit: () => {},
     onRetry: () => {},
     onClose: () => {},
+    t: zhT,
     ...props,
   };
   const element = ExportDialog(merged) as unknown as { type?: unknown; props: Record<string, unknown> };
@@ -156,6 +158,25 @@ describe('ExportDialog（T025）', () => {
     const close = find(byRole('close'));
     (close!.onClick as () => void)();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('四类错误的引导文案（T036）：auth/connect/path/llm-adapter 各有行动指引', () => {
+    const cases: [string, RegExp][] = [
+      ['siyuan-auth', /API token/],
+      ['siyuan-connect', /思源已启动/],
+      ['siyuan-path', /重新选择/],
+      ['llm-adapter', /模型设置/],
+    ];
+    for (const [category, pattern] of cases) {
+      const { find } = render({
+        status: 'failed',
+        error: { category, message: `原始消息-${category}`, retryable: true },
+      });
+      const feedback = find(byRole('feedback'));
+      const text = String(feedback?.children);
+      expect(text, category).toContain(`原始消息-${category}`);
+      expect(text, category).toMatch(pattern);
+    }
   });
 
   it('无目标路径时导出禁用', () => {
