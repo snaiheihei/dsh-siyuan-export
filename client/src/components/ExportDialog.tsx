@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StoragePath } from '../../../src/contract';
-import { isGuideKey } from '../locales';
+import { isGuideKey, shouldAppendGuide } from '../locales';
 
 export type ExportDialogProps = {
   status: string;
@@ -115,14 +115,14 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
     if (succeeded && target) return `${t('feedback.succeeded')}${target.display}`;
     if (failed && error) {
       const guide = guideText(error.category);
-      const needGuide = guide !== null && !error.message.includes(guide.slice(0, 6));
+      const needGuide = guide !== null && shouldAppendGuide(error.message, error.category);
       return needGuide
         ? `${t('feedback.failed')}${error.message}\n${guide}`
         : `${t('feedback.failed')}${error.message}`;
     }
     if (degraded && error) {
       const guide = guideText(error.category);
-      const needGuide = guide !== null && !error.message.includes(guide.slice(0, 6));
+      const needGuide = guide !== null && shouldAppendGuide(error.message, error.category);
       const base = `${t('feedback.degradedPrefix')}${error.message}${t('feedback.degradedSuffix')}`;
       return needGuide ? `${base}\n${guide}` : base;
     }

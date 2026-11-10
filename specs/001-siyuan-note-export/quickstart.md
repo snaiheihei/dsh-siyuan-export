@@ -116,3 +116,19 @@ node "<dsh-repo>\apps\cli\lib\bin.js" --profile web --dump-config   # 仅证 bun
 3. `removeDocByID {id}` 才是按 id 删除的官方签名（`removeDoc` 要 `.sy` 存储路径）
 4. 根层文档判定 = path 斜杠数 1；`lsNotebooks` 返回 `{notebooks:[…]}` 包装对象
 
+---
+
+## 真实试用记录（2026-11-10 · 用户授权装入真实环境）
+
+| 步骤 | 结果 |
+|---|---|
+| `npm pack` → `dsh-siyuan-export-0.1.0.tgz` | ✅（prepack 自动 build；tgz 已 gitignore） |
+| 装入**真实** profile（`dsh plugin --profile web add`，宿主同款 tsx 入口） | ✅ 供应链策略通过（134 entries）、`+ dsh-siyuan-export 0.1.0` |
+| **HMR 自动激活**（新增 bundle 免重启——未动用户运行中的宿主） | ✅ 路由立即可用 |
+| 真实宿主 `tree.list` 三层（3080 → 本机思源 3.8.9） | ✅ 笔记本「work」→ 根层 19 文档 → /AI 下 9 子文档 |
+| 真实宿主参数校验信封（`export.open` 空 body → 400 `请求参数无效（messageId）`） | ✅ |
+| 浏览器点击按钮 → 真实模型生成 → 写入思源（V5A + SC 计时） | ⏳ **待你点一次**（见 README 使用节；会话日志多帧解析成本高，归手工） |
+
+**注意**：真实 profile 的依赖记录为 `file:…/dsh_export_notes/dsh-siyuan-export-0.1.0.tgz`——安装内容已复制进 pnpm store，但**请保留仓库根的该 tgz**（profile 将来重装时需要）。
+
+

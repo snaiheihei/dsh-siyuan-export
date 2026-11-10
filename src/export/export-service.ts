@@ -163,8 +163,8 @@ export class ExportService {
         existing.abort = retryAbort;
         void this.generate(existing, retryAbort.signal);
       }
-      const prefs = await this.deps.prefs.read().catch(() => ({ lastPath: null }));
-      return { ...this.toOpenData(existing), lastPath: prefs.lastPath };
+      const lastPath = await this.readLastPath();
+      return { ...this.toOpenData(existing), lastPath };
     }
 
     const task: TaskState = {
@@ -182,7 +182,7 @@ export class ExportService {
     };
     this.tasks.set(key, task);
 
-    const prefs = await this.deps.prefs.read().catch(() => ({ lastPath: null }));
+    const lastPath = await this.readLastPath();
 
     // 后台生成（失败走降级，不阻塞 open 返回）
     const abort = new AbortController();
@@ -193,7 +193,7 @@ export class ExportService {
       taskId: task.taskId,
       status: task.status,
       title: task.title,
-      lastPath: prefs.lastPath,
+      lastPath,
       error: task.error,
     };
   }
@@ -225,6 +225,12 @@ export class ExportService {
     const task = this.tasks.get(taskId);
     if (!task) throw new PluginError('internal', '导出任务不存在或已结束', false);
     return task;
+  }
+
+  /** 读上次成功路径（open 两处共用；读失败按 null 处理，不阻断导出） */
+  private async readLastPath(): Promise<StoragePath | null> {
+    const prefs = await this.deps.prefs.read().catch(() => ({ lastPath: null }));
+    return prefs.lastPath;
   }
 
   private toOpenData(task: TaskState): ExportOpenData {

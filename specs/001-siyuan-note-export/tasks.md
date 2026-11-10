@@ -243,3 +243,16 @@ Task: "T023 按钮组件 client/src/components/ExportButton.tsx"
 - 每个任务勾选时附当次会话的验证证据；未跑写「未验证（原因）」
 - E2E 成功判定以**真实状态**为准（RPC 响应、持久化状态、思源文档、重启结果）——DOM 点击成功不等于业务成功（skill 避坑速查）
 - 每个故事完成后停在 Checkpoint 独立验证，避免跨故事回归
+
+---
+
+## Phase 7: Convergence
+
+> 来源：`/speckit-converge`（2026-11-10，输入 = verify-standards 6 判断项 + analyze 复核）。宪法：占位模板（跳过）。Append-only：不改既有任务。
+
+- [X] T043 DocTree 三处「加载失败」兜底文案接入 locale：`client/src/locales.ts` 增 `tree.loadError` 键（zh/en），`client/src/components/DocTree.tsx:117,141,172` 硬编码改 `t('tree.loadError')` —— per T038 (partial) [MEDIUM] — 验证: 🔴 红（记录型 t 断言 `tree.loadError` 未被调用）→ 🟢 7/7（含新用例：非 Error 值触发兜底分支、重试成功）；typecheck 0
+- [X] T044 删除死代码 `buildNotebooksQuery`（恒返回 null，生产不使用）及其在 `tests/unit/siyuan-tree.test.ts` 的断言用例 —— per plan: tree 服务 (unrequested) [LOW] — 验证: 函数+无效断言用例删除，tree 测试 8/8（9→8，删的是死代码对应断言）；typecheck 0。无行为变更（纯删除）
+- [X] T045 提取 `clampLimit(value, min, max)` 共用辅助，消除 `src/siyuan/tree.ts:41,59` 两处重复的 LIMIT 钳制逻辑 —— per T029 (partial) [LOW] — 验证: 重构后 tree 8/8（钳制语义不变：[50,500] 区间、非法回落默认）；typecheck 0。无行为变更（纯重构）
+- [X] T046 提取 `shouldAppendGuide(message, guide)` 命名判重函数（首短语为命名常量），替换 `client/src/components/ExportDialog.tsx:118,125` 两处无解释的 `guide.slice(0, 6)` 魔法值 —— per T036 (partial) [LOW] — 验证: `GUIDE_LEAD_PHRASE` 常量与 guide 字典首短语对齐（locales.ts），dialog 9/9（四类指引断言仍过）；typecheck 0。无行为变更（等价重构）
+- [X] T047 DocTree 结构重构：提取 `toggleExpanded(key)` 消除 5 处 `Set+add` 重复、提取 `expandToPath` 缩短 ~80 行三层嵌套的初始化 effect 并去掉 `matched!` 非空断言 —— per plan: DocTree 组件 (partial) [LOW] — 验证: 重构为 `expandKey`+`expandToPath`（局部常量 `hit` 替代非空断言、effect 瘦身至 ~20 行），doc-tree 7/7 行为不变；typecheck 0。无行为变更（纯重构）
+- [X] T048 提取 `readLastPath()` 辅助，消除 `src/export/export-service.ts:166,185` 两处重复的 `prefs.read().catch(...)` —— per plan: 存储决策 (partial) [LOW] — 验证: 私有辅助提取后 open 两处调用；全量 135/135 + typecheck/lint/build/pack-check 全 0。无行为变更（纯重构）

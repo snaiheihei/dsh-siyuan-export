@@ -23,13 +23,14 @@ export interface DocRow {
   type: string;
 }
 
-/** 笔记本列表走官方 lsNotebooks（无 SQL）——返回 null 表示不用 SQL */
-export function buildNotebooksQuery(): null {
-  return null;
-}
-
 const LIMIT_MIN = 50;
 const LIMIT_MAX = 500;
+
+/** LIMIT 钳制（子文档/根层查询共用）：非法值回落默认，区间 [50, 500] */
+function clampLimit(value: number | undefined): number {
+  const raw = value ?? LIMIT_MIN;
+  return Math.min(LIMIT_MAX, Math.max(LIMIT_MIN, Math.trunc(raw)));
+}
 
 /**
  * 子文档查询（真实思源 3.8.9 实测形态）：
@@ -43,8 +44,7 @@ export function buildChildDocsQuery(input: {
   docId: string;
   limit?: number;
 }): string {
-  const raw = input.limit ?? LIMIT_MIN;
-  const limit = Math.min(LIMIT_MAX, Math.max(LIMIT_MIN, Math.trunc(raw)));
+  const limit = clampLimit(input.limit);
   return [
     'SELECT id, parent_id, box, hpath, name, path, type FROM blocks',
     `WHERE type = 'd' AND box = '${escapeSql(input.notebookId)}'`,
@@ -57,8 +57,7 @@ export function buildChildDocsQuery(input: {
 
 /** 根层子文档查询：path 仅含开头 1 个斜杠（`/<自身id>.sy`） */
 export function buildRootDocsQuery(input: { notebookId: string; limit?: number }): string {
-  const raw = input.limit ?? LIMIT_MIN;
-  const limit = Math.min(LIMIT_MAX, Math.max(LIMIT_MIN, Math.trunc(raw)));
+  const limit = clampLimit(input.limit);
   return [
     'SELECT id, parent_id, box, hpath, name, path, type FROM blocks',
     `WHERE type = 'd' AND box = '${escapeSql(input.notebookId)}'`,

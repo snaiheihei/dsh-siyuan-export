@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildChildDocsQuery,
-  buildNotebooksQuery,
   buildRootDocsQuery,
   mapDocRows,
   type DocRow,
@@ -35,12 +34,6 @@ const ROWS: DocRow[] = [
     type: 'd',
   },
 ];
-
-describe('buildNotebooksQuery（T027）', () => {
-  it('笔记本列表用官方 lsNotebooks 接口（无 SQL）', () => {
-    expect(buildNotebooksQuery()).toBeNull();
-  });
-});
 
 describe('buildChildDocsQuery（T027）', () => {
   it('按 box 过滤，type 为文档类型，显式 LIMIT 与稳定排序', () => {

@@ -35,6 +35,7 @@ export const zh = {
   'tree.loading': '加载中…',
   'tree.retry': '重试',
   'tree.selected': '已选中',
+  'tree.loadError': '加载失败',
 } satisfies Record<string, string>
 
 /** 本命名空间的键集 */
@@ -78,6 +79,7 @@ export const en = {
   'tree.loading': 'Loading…',
   'tree.retry': 'Retry',
   'tree.selected': 'Selected',
+  'tree.loadError': 'Loading failed',
 } satisfies Record<SiyuanExportKey, string>
 
 /** 有引导文案的错误类别（对应 `guide.${category}` 字典键） */
@@ -92,6 +94,23 @@ export type GuideCategory = (typeof GUIDE_CATEGORIES)[number];
 
 export function isGuideKey(category: string): category is GuideCategory {
   return (GUIDE_CATEGORIES as readonly string[]).includes(category);
+}
+
+/** 各指引文案的首短语（与上方 guide.* 字典值一致；用于判重，避免魔法 slice） */
+const GUIDE_LEAD_PHRASE: Record<GuideCategory, string> = {
+  'siyuan-auth': '请在思源',
+  'siyuan-connect': '请确认思源',
+  'siyuan-path': '目标路径',
+  'llm-adapter': '请在 dsh',
+};
+
+/**
+ * 是否追加指引（T046）：服务端 message 已含该指引时（如 auth 文案自带配置路径）
+ * 不重复拼接；按命名首短语判断，替代无解释的 `guide.slice(0, 6)`。
+ */
+export function shouldAppendGuide(message: string, category: string): boolean {
+  if (!isGuideKey(category)) return false;
+  return !message.includes(GUIDE_LEAD_PHRASE[category]);
 }
 
 /** 测试/降级用的同步 zh 翻译器（签名对齐官方 TranslateNS：params 值为 unknown） */

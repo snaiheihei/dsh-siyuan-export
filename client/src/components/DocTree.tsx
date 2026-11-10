@@ -8,6 +8,7 @@
  *  - initialPath 逐层展开并默认选中（T032：上次成功路径）
  *  - initialPath 为空时默认选中第一个笔记本根（spec：笔记本根可直接导出）
  *  - 加载失败就地显示原因并可重试（FR-010）
+ * 文案经 `siyuan-export` locale 的 t()，不硬编码（T038/T043）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
@@ -69,7 +70,7 @@ export function DocTree(props: DocTreeProps): JSX.Element {
 
   const requestRef = useRef(0);
   const initialAppliedRef = useRef(false);
-  // onSelected 在初始化 effect 中使用最新引用（一次性初始化，避免 effect 重跑）
+  // onSelected 在初始化逻辑中使用最新引用（一次性初始化，避免 effect 重跑）
   const selectedRef = useRef(props.onSelected);
   selectedRef.current = props.onSelected;
 
@@ -94,6 +95,15 @@ export function DocTree(props: DocTreeProps): JSX.Element {
     [roots],
   );
 
+  /** 无条件展开某 key（懒加载成功后/已加载节点点击）——消 5 处 Set+add 重复 */
+  const expandKey = useCallback((key: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, []);
+
   const loadChildren = useCallback(
     async (key: string, notebookId: string, docId: string): Promise<void> => {
       const requestId = ++requestRef.current;
@@ -103,24 +113,20 @@ export function DocTree(props: DocTreeProps): JSX.Element {
         const nodes = await onLoadChildren(notebookId, docId);
         if (requestId !== requestRef.current) return; // stale：丢弃旧响应
         setChildrenMap((prev) => ({ ...prev, [key]: nodes }));
-        setExpanded((prev) => {
-          const next = new Set(prev);
-          next.add(key);
-          return next;
-        });
+        expandKey(key);
       } catch (err) {
         if (requestId !== requestRef.current) return;
         setError({
           key,
           notebookId,
           docId,
-          message: err instanceof Error ? err.message : '加载失败',
+          message: err instanceof Error ? err.message : t('tree.loadError'),
         });
       } finally {
         if (requestId === requestRef.current) setLoadingKey(null);
       }
     },
-    [onLoadChildren],
+    [onLoadChildren, expandKey, t],
   );
 
   const loadRoot = useCallback(async (): Promise<TreeNode[] | null> => {
@@ -138,14 +144,75 @@ export function DocTree(props: DocTreeProps): JSX.Element {
           key: 'root',
           notebookId: '',
           docId: '',
-          message: err instanceof Error ? err.message : '加载失败',
+          message: err instanceof Error ? err.message : t('tree.loadError'),
         });
       }
       return null;
     } finally {
       if (requestId === requestRef.current) setLoadingKey(null);
     }
-  }, [onLoadRoot]);
+  }, [onLoadRoot, t]);
+
+  /**
+   * 从笔记本根层逐段加载并展开，直到与 path.parentSegments 完全匹配（T047 提取：
+   * 缩短初始化 effect、以局部常量替代 `matched!` 非空断言）。
+   * 中途失败/过期请求则停止，保持已展开部分（行内重试兜底）。
+   */
+  const expandToPath = async (notebook: TreeNode, path: StoragePath): Promise<void> => {
+    const requestId = ++requestRef.current;
+    let current: TreeNode[];
+    try {
+      current = await onLoadChildren(notebook.id, '');
+    } catch (err) {
+      if (requestId === requestRef.current) {
+        setError({
+          key: notebook.id,
+          notebookId: notebook.id,
+          docId: '',
+          message: err instanceof Error ? err.message : t('tree.loadError'),
+        });
+      }
+      return;
+    }
+    if (requestId !== requestRef.current) return;
+    setChildrenMap((prev) => ({ ...prev, [notebook.id]: current }));
+    expandKey(notebook.id);
+
+    let matched: TreeNode | undefined;
+    for (let depth = 1; depth <= path.parentSegments.length; depth += 1) {
+      const prefix = path.parentSegments.slice(0, depth);
+      const hit = current.find((node) => samePath(node.path, prefix));
+      if (!hit) {
+        matched = undefined;
+        break;
+      }
+      matched = hit;
+      if (hit.path.length === path.parentSegments.length) break;
+      expandKey(hit.id);
+      try {
+        current = await onLoadChildren(hit.notebookId, hit.id);
+      } catch {
+        return; // 中途失败：错误由行内重试兜底
+      }
+      if (requestId !== requestRef.current) return;
+      const childKey = hit.id;
+      setChildrenMap((prev) => ({ ...prev, [childKey]: current }));
+    }
+
+    if (matched && samePath(matched.path, path.parentSegments)) {
+      setAutoSelectedKey(matched.id);
+      selectedRef.current(
+        matched.kind === 'notebook'
+          ? {
+              notebookId: matched.id,
+              notebookName: matched.name,
+              parentSegments: [],
+              display: matched.name,
+            }
+          : path,
+      );
+    }
+  };
 
   // 初始化：加载根层 + initialPath 逐层展开（T032）或默认选中首个笔记本根
   useEffect(() => {
@@ -157,64 +224,7 @@ export function DocTree(props: DocTreeProps): JSX.Element {
 
       if (initialPath) {
         const notebook = nodes.find((n) => n.id === initialPath.notebookId);
-        if (!notebook) return;
-        const requestId = ++requestRef.current;
-        // 第一层：笔记本根文档
-        let current: TreeNode[];
-        try {
-          current = await onLoadChildren(notebook.id, '');
-        } catch (err) {
-          if (requestId === requestRef.current) {
-            setError({
-              key: notebook.id,
-              notebookId: notebook.id,
-              docId: '',
-              message: err instanceof Error ? err.message : '加载失败',
-            });
-          }
-          return;
-        }
-        if (requestId !== requestRef.current) return;
-        setChildrenMap((prev) => ({ ...prev, [notebook.id]: current }));
-        setExpanded((prev) => {
-          const next = new Set(prev);
-          next.add(notebook.id);
-          return next;
-        });
-
-        // 逐层向下匹配 parentSegments
-        let matched: TreeNode | null = null;
-        for (let depth = 1; depth <= initialPath.parentSegments.length; depth += 1) {
-          const prefix = initialPath.parentSegments.slice(0, depth);
-          matched = current.find((node) => samePath(node.path, prefix)) ?? null;
-          if (!matched) break;
-          if (matched.path.length === initialPath.parentSegments.length) break;
-          setExpanded((prev) => {
-            const next = new Set(prev);
-            next.add(matched!.id);
-            return next;
-          });
-          try {
-            current = await onLoadChildren(matched.notebookId, matched.id);
-          } catch {
-            return; // 中途失败：保持已展开部分，错误由行内重试兜底
-          }
-          if (requestId !== requestRef.current) return;
-          setChildrenMap((prev) => ({ ...prev, [matched!.id]: current }));
-        }
-        if (matched && samePath(matched.path, initialPath.parentSegments)) {
-          setAutoSelectedKey(matched.id);
-          selectedRef.current(
-            matched.kind === 'notebook'
-              ? {
-                  notebookId: matched.id,
-                  notebookName: matched.name,
-                  parentSegments: [],
-                  display: matched.name,
-                }
-              : initialPath,
-          );
-        }
+        if (notebook) await expandToPath(notebook, initialPath);
         return;
       }
 
@@ -232,27 +242,14 @@ export function DocTree(props: DocTreeProps): JSX.Element {
   }, []);
 
   const handleNodeClick = (node: TreeNode): void => {
-    const target = buildTarget(node);
+    props.onSelected(buildTarget(node));
     setAutoSelectedKey(node.id);
-    props.onSelected(target);
     if (node.kind === 'notebook') {
-      const key = node.id;
-      if (!childrenMap[key]) void loadChildren(key, node.id, '');
-      else
-        setExpanded((prev) => {
-          const next = new Set(prev);
-          next.add(key);
-          return next;
-        });
+      if (!childrenMap[node.id]) void loadChildren(node.id, node.id, '');
+      else expandKey(node.id);
     } else if (node.hasChildren) {
-      const key = node.id;
-      if (!childrenMap[key]) void loadChildren(key, node.notebookId, node.id);
-      else
-        setExpanded((prev) => {
-          const next = new Set(prev);
-          next.add(key);
-          return next;
-        });
+      if (!childrenMap[node.id]) void loadChildren(node.id, node.notebookId, node.id);
+      else expandKey(node.id);
     }
   };
 

@@ -115,6 +115,30 @@ describe('DocTree（T031/T032）', () => {
     await waitFor(() => expect(screen.getByText('项目A')).toBeTruthy());
   });
 
+  it('加载失败的兜底文案来自 locale 字典 t()（T043，不硬编码）', async () => {
+    const called: string[] = [];
+    const spyT = ((key: Parameters<typeof zhT>[0], params?: Record<string, unknown>) => {
+      called.push(String(key));
+      return zhT(key, params);
+    }) as typeof zhT;
+    let fail = true;
+    const onLoadRoot = vi.fn(async () => {
+      if (fail) {
+        fail = false;
+        // 非 Error 值 → 走 t('tree.loadError') 兜底分支
+        return Promise.reject('boom-not-an-error');
+      }
+      return [NOTEBOOK];
+    });
+    setup({ onLoadRoot, t: spyT });
+    expect(await screen.findByText('加载失败')).toBeTruthy();
+    expect(called).toContain('tree.loadError');
+    // 重试成功
+    const retry = await screen.findByRole('button', { name: /重试/ });
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByText('工作')).toBeTruthy());
+  });
+
   it('initialPath 匹配 → 默认展开该层级并标记选中（T032）', async () => {
     const initialPath: StoragePath = {
       notebookId: 'nb-1',
