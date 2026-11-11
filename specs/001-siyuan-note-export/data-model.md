@@ -168,7 +168,7 @@ SingleOutput ──(静默 open)── SilentExportTask ──(自动 commit)─
 | retryable | boolean | 失败时决定是否显示「重试」 |
 | createdAt | number | 成功 ~6s 自动消失；失败**常驻**直至关闭/重试 |
 
-**规则**：最多同时 3 条；`success/degraded` 用 `role=status`、`failed` 用 `role=alert`；重试即再次 `export.open({intent:'silent'})`，复用幂等键；不在状态文件中持久化。
+**规则**：Client 静默任务单例键 = `sessionId:messageId`（与 Host 幂等键同粒度，避免不同会话同 messageId 串台）；Notice 键 = taskId。最多同时 3 条；`success/degraded` 用 `role=status`、`failed` 用 `role=alert`；重试即再次 `export.open({intent:'silent'})`，复用幂等键；不在状态文件中持久化。
 
 ## 校验规则 ↔ FR 映射
 

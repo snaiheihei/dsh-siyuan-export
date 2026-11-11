@@ -138,7 +138,7 @@
 |---|---|
 | 点击导出按钮 | `export.open({ messageId, sessionId })`（`intent` 缺省，由 Host 判定） |
 | 响应 `mode='dialog'` | 立即打开弹窗（< 1s，SC-001 前半）；title 生成中显示占位「正在生成默认主题名…」；目标默认值 = `lastPath ?? defaultPath`（都无则要求选择） |
-| 响应 `mode='silent'` | **不打开弹窗**；按钮进入加载/运行态；登记到 Client 静默任务单例（跨会话存活） |
+| 响应 `mode='silent'` | **不打开弹窗**；按钮进入加载/运行态；登记到 Client 静默任务单例（键 = `sessionId:messageId`，跨会话存活；终态提示按 taskId 归属） |
 | 静默 `alreadyRunning=true` | 不重复发起；沿用当前加载态 |
 | title 返回（弹窗） | 未编辑则自动填入（FR-003 默认值），编辑过则不覆盖 |
 | 轮询至 `ready/degraded-ready` | 「导出」按钮可用 |

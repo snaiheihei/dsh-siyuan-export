@@ -90,7 +90,7 @@ src/
 client/
 ├── src/entry.tsx           # Client 入口：assistant-actions / sidebar.panellist / main / shell.overlay
 ├── src/rpc.ts              # 类型化同源请求（与 contract.ts 共享类型，运行时仍校验）
-├── src/silent-export.ts    # 静默任务单例：后台轮询、跨会话保持加载态、完成即推 toast、按 messageId 防重
+├── src/silent-export.ts    # 静默任务单例：后台轮询、跨会话保持加载态、完成即推 toast、按 sessionId+messageId 防重
 ├── src/toast-store.ts      # 非阻塞提示队列（成功/失败/重试动作，上限与自动消失）
 ├── src/svg.d.ts            # `*.svg` 模块声明（esbuild dataurl）
 ├── src/components/
@@ -128,7 +128,7 @@ tests/
 |-----------|------------|-------------------------------------|
 | SiYuan / LLM 适配器 seam（`siyuan/client.ts`、`export/llm.ts`） | 外部副作用边界：测试需 fake 端口与假 prepared call；错误分类、重试与 FR-013 输入裁剪集中收口 | 直接在导出服务内调 HTTP/模型流，会让状态机测试依赖真实网络与宿主，且输入裁剪逻辑散落各处无法断言 |
 | 落点解析 seam（`siyuan/target.ts`） | FR-018/FR-023 的「设置路径 → 当前笔记本根」「失效即失败不改写」需要两个调用方（静默导出、设置保存校验）共用；测试用 fake client 覆盖无笔记本/路径失效/认证失败 | 规则直接写进 `export-service.ts` 与 `routes.ts`：两处会重复且可能分叉，单测需构造完整服务与 HTTP |
-| 静默任务单例（`client/src/silent-export.ts`） | 任务生命周期必须独立于消息行组件：切换会话/面板后仍要轮询、保留按钮加载态并在完成时弹 toast；测试注入 fake client 验证跨卸载与按 messageId 防重 | 把轮询放在 `SiyuanExportAction` 的 effect 里：卸载即中止/丢结果，违背 FR-019/FR-025，且重复点击无法在组件间去重 |
+| 静默任务单例（`client/src/silent-export.ts`） | 任务生命周期必须独立于消息行组件：切换会话/面板后仍要轮询、保留按钮加载态并在完成时弹 toast；测试注入 fake client 验证跨卸载与按 sessionId+messageId 防重 | 把轮询放在 `SiyuanExportAction` 的 effect 里：卸载即中止/丢结果，违背 FR-019/FR-025，且重复点击无法在组件间去重 |
 
 ## Change 增量设计（2026-11-11）
 
@@ -196,7 +196,7 @@ interface PrefsData {
 
 ### 6. 结果提示与静默任务生命周期（FR-019/020）
 
-- `client/src/silent-export.ts` 单例按 `messageId` 维护进行中任务：组件卸载（切会话/切面板）不取消；完成时写入全局 toast；再次挂载的按钮从单例读取加载态。
+- `client/src/silent-export.ts` 单例按 `sessionId:messageId` 维护进行中任务（与 Host 幂等键同粒度；终态提示按 taskId 归属）：组件卸载（切会话/切面板）不取消；完成时写入全局 toast；再次挂载的按钮从单例读取加载态。
 - `toast-store.ts` + `ToastHost.tsx` 注册到 `shell.overlay`：
   - 成功：`已导出到：{display}`，可带 `siyuan://blocks/{id}` 链接，约 6s 自动消失，可手动关闭；
   - 失败：原因 + 「重试」+ 路径/认证类错误附「打开设置」；常驻直到用户处理（不自动消失，避免错过）；

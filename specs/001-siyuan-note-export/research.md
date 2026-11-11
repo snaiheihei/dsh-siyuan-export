@@ -82,7 +82,7 @@
 **Rationale**：FR-013 是硬约束，散落拼接点无法审计；skill 纪律「模型可见即被记录」下，最小输入也避免污染。
 **Alternatives**：在导出服务各处按需拼接 → 弃（无法断言）。
 
-**Decision 3 — 防重以 Host 权威状态为准，按钮禁用只是显示**：一次导出 = 以 `messageId + 内容 revision` 为幂等键的 in-flight 集合；Host 端串行队列内查重（FR-011），Client 按钮 loading 态仅是表现层。
+**Decision 3 — 防重以 Host 权威状态为准，按钮禁用只是显示**：一次导出 = 以 `sessionId + messageId + 内容 revision` 为幂等键的 in-flight 集合；Host 端串行队列内查重（FR-011），Client 按钮 loading 态仅是表现层。
 
 **Rationale**：skill 明确「不要依赖按钮禁用代替 Host 防重」；多次点击、事件重复、重启恢复都按幂等键处理。
 **Alternatives**：仅前端禁用按钮（双开/事件重复仍可能双写）→ 弃。
@@ -174,7 +174,7 @@
 ## R9 · 静默任务生命周期与提示（Client 侧）
 
 **Decision**：
-- 静默任务由模块级单例 `client/src/silent-export.ts` 持有：按 `messageId` 记录进行中任务、轮询 `export.state`、完成时写入全局 toast；消息行组件卸载（切会话/面板）**不取消**任务，重新挂载时从单例恢复加载态。
+- 静默任务由模块级单例 `client/src/silent-export.ts` 持有：按 `sessionId:messageId` 记录进行中任务、轮询 `export.state`、完成时写入全局 toast；消息行组件卸载（切会话/面板）**不取消**任务，重新挂载时从单例恢复加载态。
 - `client/src/toast-store.ts` + `ToastHost.tsx` 注册到 `shell.overlay`；成功 toast 约 6s 自动消失，失败 toast 常驻并提供重试/打开设置；栈上限 3；容器 `aria-live="polite"`，toast 根 `pointer-events:auto`。
 
 **Rationale**：
