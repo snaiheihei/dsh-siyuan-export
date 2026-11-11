@@ -83,6 +83,57 @@ const PRIMARY_BUTTON_STYLE: React.CSSProperties = {
   color: '#fff',
 };
 
+const SUBMIT_BUTTON_STYLE: React.CSSProperties = {
+  ...PRIMARY_BUTTON_STYLE,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '6px',
+  minWidth: '92px',
+};
+
+/** 禁用态必须可见：蓝底 + pointer 会让人以为还能点（真实试用缺陷） */
+const SUBMIT_DISABLED_STYLE: React.CSSProperties = {
+  opacity: 0.45,
+  cursor: 'not-allowed',
+};
+
+const BUSY_FEEDBACK_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '8px 10px',
+  borderRadius: '8px',
+  background: 'var(--dsh-subtle-bg, rgba(127, 127, 127, 0.08))',
+  fontSize: '13px',
+  whiteSpace: 'pre-line',
+};
+
+/** 自包含转圈（SMIL 动画，不依赖全局 keyframes） */
+function Spinner(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+      <path
+        d="M12 3a9 9 0 0 1 9 9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      >
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="0.75s"
+          repeatCount="indefinite"
+        />
+      </path>
+    </svg>
+  );
+}
+
 export function ExportDialog(props: ExportDialogProps): JSX.Element {
   const {
     status,
@@ -100,6 +151,7 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
 
   const generating = status === 'generating';
   const writing = status === 'writing';
+  const busy = generating || writing;
   const succeeded = status === 'succeeded';
   const failed = status === 'failed';
   const degraded = status === 'degraded-ready';
@@ -151,6 +203,20 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
     : lastPath
       ? t('field.targetLast', { path: lastPath.display })
       : t('field.targetEmpty');
+
+  const submitLabel = writing
+    ? t('submit.exporting')
+    : generating
+      ? t('submit.generating')
+      : t('submit.export');
+  // 禁用时给出原因（悬停可见），避免「点了没反应」
+  const submitHint = generating
+    ? t('feedback.generating')
+    : writing
+      ? t('feedback.writing')
+      : !target
+        ? t('field.targetEmpty')
+        : undefined;
 
   return (
     <div style={OVERLAY_STYLE} data-role="export-dialog-overlay">
@@ -214,8 +280,10 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
         {feedbackText ? (
           <div
             data-role="feedback"
-            style={{ fontSize: '13px', opacity: 1, whiteSpace: 'pre-line' }}
+            aria-live="polite"
+            style={busy ? BUSY_FEEDBACK_STYLE : { fontSize: '13px', whiteSpace: 'pre-line' }}
           >
+            {busy ? <Spinner /> : null}
             {feedbackText}
           </div>
         ) : null}
@@ -229,11 +297,14 @@ export function ExportDialog(props: ExportDialogProps): JSX.Element {
           <button
             type="button"
             data-role="submit"
-            style={PRIMARY_BUTTON_STYLE}
+            style={canSubmit ? SUBMIT_BUTTON_STYLE : { ...SUBMIT_BUTTON_STYLE, ...SUBMIT_DISABLED_STYLE }}
             disabled={!canSubmit}
+            aria-busy={busy}
+            title={submitHint}
             onClick={onSubmit}
           >
-            {writing ? t('submit.exporting') : t('submit.export')}
+            {busy ? <Spinner /> : null}
+            <span>{submitLabel}</span>
           </button>
         </div>
       </div>

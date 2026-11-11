@@ -88,13 +88,28 @@ function byRole(role: string): (props: Record<string, unknown>) => boolean {
 }
 
 describe('ExportDialog（T025）', () => {
-  it('generating：标题占位提示，导出按钮禁用', () => {
+  it('generating：标题占位提示，导出按钮禁用且可见地不可点', () => {
     const { find } = render({ status: 'generating', title: '' });
     const input = find(byTag('input'));
     expect(input).toBeDefined();
     expect(String(input!.placeholder)).toContain('正在生成');
     const submit = find(byRole('submit'));
     expect(submit!.disabled).toBe(true);
+    // 真实试用缺陷：disabled 按钮仍是蓝底 pointer，看起来能点却没反应
+    expect(submit!['aria-busy']).toBe(true);
+    expect((submit!.style as Record<string, unknown>).cursor).toBe('not-allowed');
+    expect(String(submit!.title)).toContain('调用模型');
+    expect(find((p) => p.type === 'span' && p.children === '生成中…')).toBeDefined();
+    const feedback = find(byRole('feedback'));
+    expect(String(feedback?.children)).toContain('调用模型');
+  });
+
+  it('writing：按钮显示导出中并保持禁用（避免重复提交）', () => {
+    const { find } = render({ status: 'writing' });
+    const submit = find(byRole('submit'));
+    expect(submit!.disabled).toBe(true);
+    expect(submit!['aria-busy']).toBe(true);
+    expect(find((p) => p.type === 'span' && p.children === '导出中…')).toBeDefined();
   });
 
   it('ready：标题回填 LLM 值，用户已编辑时不覆盖', () => {
@@ -201,9 +216,10 @@ describe('ExportDialog（T025）', () => {
     expect(text).not.toContain('Token，');
   });
 
-  it('无目标路径时导出禁用', () => {
+  it('无目标路径时导出禁用，并提示原因', () => {
     const { find } = render({ target: null });
     const submit = find(byRole('submit'));
     expect(submit!.disabled).toBe(true);
+    expect(String(submit!.title)).toContain('未选择');
   });
 });

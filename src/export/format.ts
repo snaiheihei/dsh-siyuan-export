@@ -3,6 +3,7 @@
  *
  * 职责（FR-008/FR-009）：
  *  - H1 降级为 H2（文档标题即笔记主题，避免与正文一级标题重复）；代码围栏内不动
+ *  - `**加粗**` 转 `<strong>`：思源关闭「星号语法」时 Lute 不解析 `**`，内联 HTML 仍加粗
  *  - 提取要点小图标（✅ 📌 ⚠️ 💡 等）并去重、保序
  *  - 追加元数据注记 footer（导出时间 / 来源会话 / 消息 / 内容修订 / 排版版本）
  *  - 列表、代码块、链接等原样保留
@@ -66,6 +67,44 @@ function demoteHeadings(lines: string[]): string[] {
   });
 }
 
+/**
+ * `**x**` → `<strong>x</strong>`（仅行内文本）。
+ * 思源设置 `editor.markdown.inlineAsterisk=false` 时 Lute 完全不解析 `**`，
+ * 内联 HTML 不受该开关影响；同时绕开 CommonMark 的 CJK 标点贴合限制。
+ * 星号内带空格、三连星号（斜体+加粗）保持原样，避免误判。
+ */
+const BOLD_PATTERN = /(?<!\\)(?<!\*)\*\*(?!\s)(.+?)(?<!\s)(?<!\*)\*\*(?!\*)/g;
+
+/** 逐行转换，跳过行内代码片段（`code` 内的星号不是语法） */
+function convertBoldInLine(line: string): string {
+  let out = '';
+  let index = 0;
+  let plainStart = 0;
+  while (index < line.length) {
+    if (line[index] !== '`') {
+      index += 1;
+      continue;
+    }
+    let run = 1;
+    while (line[index + run] === '`') run += 1;
+    const close = line.indexOf('`'.repeat(run), index + run);
+    if (close < 0) {
+      index += run; // 未闭合的反引号按普通文本继续扫描
+      continue;
+    }
+    out += line.slice(plainStart, index).replace(BOLD_PATTERN, '<strong>$1</strong>');
+    out += line.slice(index, close + run);
+    index = close + run;
+    plainStart = index;
+  }
+  return out + line.slice(plainStart).replace(BOLD_PATTERN, '<strong>$1</strong>');
+}
+
+function convertBold(lines: string[]): string[] {
+  const fenced = fencedLineIndices(lines);
+  return lines.map((line, index) => (fenced.has(index) ? line : convertBoldInLine(line)));
+}
+
 /** 提取正文中的小图标（按出现顺序去重） */
 export function extractMarkers(body: string): string[] {
   const found: string[] = [];
@@ -105,7 +144,7 @@ export function formatNote(input: FormatInput): FormatResult {
   const raw = input.body ?? '';
   const markers = extractMarkers(raw);
   const lines = raw.split('\n');
-  const demoted = demoteHeadings(lines);
+  const demoted = demoteHeadings(convertBold(lines));
   const bodyText = demoted.join('\n').trim();
   const footerText = footer(input, bodyText.length > 0);
   const markdown = bodyText.length > 0 ? `${bodyText}\n\n${footerText}\n` : `${footerText}\n`;

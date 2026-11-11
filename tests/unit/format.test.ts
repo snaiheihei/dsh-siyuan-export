@@ -64,6 +64,41 @@ describe('formatNote（T018）', () => {
     expect(markdown).toContain('[链接](https://example.com)');
   });
 
+  it('加粗转 <strong>：思源关闭星号语法时仍加粗，CJK 标点场景也覆盖', () => {
+    const body = [
+      '**Pydantic schema 本身就是契约**——Python 里契约模式最典型的实现。',
+      '',
+      '这是**“加粗”**后面的字',
+      '',
+      '**a** 与 **b**',
+    ].join('\n');
+    const { markdown } = formatNote({ body, source: SOURCE, exportedAt: AT });
+    expect(markdown).toContain('<strong>Pydantic schema 本身就是契约</strong>——');
+    expect(markdown).toContain('这是<strong>“加粗”</strong>后面的字');
+    expect(markdown).toContain('<strong>a</strong> 与 <strong>b</strong>');
+    expect(markdown).not.toContain('**Pydantic');
+  });
+
+  it('加粗转换不碰代码围栏、行内代码、带空格星号与三连星号', () => {
+    const body = [
+      '```md',
+      '**围栏内保持**',
+      '```',
+      '',
+      '`**行内代码保持**`',
+      '',
+      '** 前后带空格 **',
+      '',
+      '***三连星号保持***',
+    ].join('\n');
+    const { markdown } = formatNote({ body, source: SOURCE, exportedAt: AT });
+    expect(markdown).toContain('**围栏内保持**');
+    expect(markdown).toContain('`**行内代码保持**`');
+    expect(markdown).toContain('** 前后带空格 **');
+    expect(markdown).toContain('***三连星号保持***');
+    expect(markdown).not.toContain('<strong>');
+  });
+
   it('空 body → 不抛错，仅产出 footer', () => {
     const { markdown, markers } = formatNote({ body: '', source: SOURCE, exportedAt: AT });
     expect(markers).toEqual([]);
