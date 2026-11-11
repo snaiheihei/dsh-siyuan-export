@@ -206,6 +206,40 @@ describe('SettingsPanel（T053）', () => {
     expect(await screen.findByText('工作')).toBeTruthy();
   });
 
+  it('打开即探测思源：不可用时路径区就地显示原因，保留已保存路径与开关（US4-6）', async () => {
+    const fake = makePanelClient({ showDialog: true, defaultPath: PATH, lastPath: null });
+    fake.treeList.mockRejectedValueOnce(
+      new ClientRpcError('siyuan-connect', '无法连接思源服务', true),
+    );
+    render(<SettingsPanel t={zhT} clientFactory={() => fake.client} />);
+
+    // 不展开文档树也能看到原因
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('无法连接思源服务');
+    expect(screen.getByText('工作 / 项目A')).toBeTruthy();
+
+    // 开关不依赖思源，仍可独立保存
+    fake.prefsUpdate.mockClear();
+    fireEvent.click(switchEl());
+    await waitFor(() =>
+      expect(fake.prefsUpdate).toHaveBeenCalledWith({ showDialog: false }),
+    );
+
+    // 探测重试成功后原因消失
+    fireEvent.click(screen.getByRole('button', { name: /重试/ }));
+    await waitFor(() => expect(screen.queryByText(/无法连接思源服务/)).toBeNull());
+  });
+
+  it('探测结果复用于文档树：展开不再重复请求根节点', async () => {
+    const fake = setup();
+    await screen.findByText('未选择');
+    await waitFor(() => expect(fake.treeList).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /选择路径/ }));
+    expect(await screen.findByText('工作')).toBeTruthy();
+    expect(fake.treeList).toHaveBeenCalledTimes(1);
+  });
+
   it('思源无笔记本 → 空态提示而非崩溃（T055）', async () => {
     const fake = setup();
     fake.treeList.mockResolvedValueOnce({ nodes: [] });
@@ -213,6 +247,44 @@ describe('SettingsPanel（T053）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /选择路径/ }));
     expect(await screen.findByText(/还没有笔记本/)).toBeTruthy();
+  });
+
+  it('保存状态条：保存中 → 已保存，aria-live 播报（T071）', async () => {
+    const fake = setup();
+    await screen.findByRole('switch', { name: /导出时显示弹窗/ });
+    const statusEl = (): Element | null => document.querySelector('[data-role="save-status"]');
+
+    // 空闲时沿用头部“即时保存”说明，状态条本身是可播报区域
+    expect(statusEl()?.getAttribute('aria-live')).toBe('polite');
+    expect(statusEl()?.textContent).toBe('即时保存');
+
+    let resolveUpdate: ((view: PrefsView) => void) | null = null;
+    fake.prefsUpdate.mockImplementationOnce(
+      () =>
+        new Promise<PrefsView>((resolve) => {
+          resolveUpdate = () => resolve({ showDialog: false, defaultPath: null, lastPath: null });
+        }),
+    );
+
+    fireEvent.click(switchEl());
+    await waitFor(() => expect(statusEl()?.textContent).toBe('保存中…'));
+
+    resolveUpdate!({ showDialog: false, defaultPath: null, lastPath: null });
+    await waitFor(() => expect(statusEl()?.textContent).toBe('已保存'));
+  });
+
+  it('保存失败 → 状态条显示保存失败，原因仍就地留在对应区块（T071）', async () => {
+    const fake = setup();
+    await screen.findByRole('switch', { name: /导出时显示弹窗/ });
+    fake.prefsUpdate.mockRejectedValueOnce(
+      new ClientRpcError('internal', '无法连接宿主服务', true),
+    );
+
+    fireEvent.click(switchEl());
+    await waitFor(() =>
+      expect(document.querySelector('[data-role="save-status"]')?.textContent).toBe('保存失败'),
+    );
+    expect(screen.getByRole('alert').textContent).toContain('无法连接宿主服务');
   });
 
   it('设置文案 zh/en 键集一致', () => {

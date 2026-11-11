@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { zhT } from '../../client/src/locales';
 import { ExportButton } from '../../client/src/components/ExportButton';
 import { SiyuanExportAction } from '../../client/src/entry';
-import type { ExportClient } from '../../client/src/rpc';
+import { ClientRpcError, type ExportClient } from '../../client/src/rpc';
 import { SilentExportManager } from '../../client/src/silent-export';
 import type {
   ExportOpenData,
@@ -285,6 +285,100 @@ describe('SiyuanExportAction 模式分派（T061）', () => {
     await waitFor(() => expect(preferred.getAttribute('aria-selected')).toBe('true'));
     const first = screen.getByRole('treeitem', { name: /第一个笔记本/ });
     expect(first.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('commit 成功：弹窗保留并显示已导出落点，用户关闭后才消失（FR-012）', async () => {
+    const client = dialogClient();
+    render(
+      <SiyuanExportAction
+        {...actionProps({ clientFactory: () => client, silentFactory: () => new SilentExportManager({ client }) })}
+      />,
+    );
+    fireEvent.click(await button());
+    fireEvent.click(await screen.findByRole('button', { name: '导出' }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-role="export-dialog-overlay"]')).not.toBeNull();
+      expect(screen.getByText(/已导出到：/)).toBeTruthy();
+    });
+    expect(screen.getByText(/已导出到：/).textContent).toContain(TARGET.display);
+    expect((screen.getByRole('button', { name: '导出' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    await waitFor(() => {
+      expect(document.querySelector('[data-role="export-dialog-overlay"]')).toBeNull();
+    });
+  });
+
+  it('失败弹窗重试 commit 成功：同样保留弹窗显示落点', async () => {
+    const client = {
+      ...dialogClient(),
+      open: vi.fn(async () => ({
+        mode: 'dialog' as const,
+        taskId: 't1',
+        status: 'failed' as const,
+        title: 'T',
+        lastPath: TARGET,
+        defaultPath: null,
+        error: { category: 'siyuan-connect', message: '写入失败', retryable: true },
+      })),
+      pollUntilSettled: vi.fn(async () => ({
+        mode: 'dialog' as const,
+        status: 'failed' as const,
+        title: 'T',
+        target: null,
+        href: null,
+        degraded: false,
+        error: { category: 'siyuan-connect', message: '写入失败', retryable: true },
+      })),
+    } as unknown as ExportClient;
+
+    render(
+      <SiyuanExportAction
+        {...actionProps({ clientFactory: () => client, silentFactory: () => new SilentExportManager({ client }) })}
+      />,
+    );
+    fireEvent.click(await button());
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-role="export-dialog-overlay"]')).not.toBeNull();
+      expect(screen.getByText(/已导出到：/)).toBeTruthy();
+    });
+  });
+
+  it('export.open 传输失败：不弹窗、按钮回 idle、可就地重试且不带 intent', async () => {
+    const openCalls: ExportOpenRequest[] = [];
+    const client = {
+      open: vi.fn(async (request: ExportOpenRequest) => {
+        openCalls.push(request);
+        if (openCalls.length === 1) {
+          throw new ClientRpcError('internal', '无法连接宿主服务，请稍后重试', true);
+        }
+        return silentOpened();
+      }),
+      pollUntilSettled: vi.fn(() => new Promise<ExportStateData>(() => undefined)),
+    } as unknown as ExportClient;
+
+    render(
+      <SiyuanExportAction
+        {...actionProps({ clientFactory: () => client, silentFactory: () => new SilentExportManager({ client }) })}
+      />,
+    );
+    fireEvent.click(await button());
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('无法连接宿主服务');
+    expect(document.querySelector('[data-role="export-dialog-overlay"]')).toBeNull();
+    expect((await button()).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(openCalls).toHaveLength(2));
+    // 重试按当前偏好重新分派：不携带 intent
+    expect(openCalls[1]).toEqual({ messageId: 'm1', sessionId: 's1' });
+    await waitFor(() => {
+      expect((screen.getByRole('button', { name: buttonName }) as HTMLButtonElement).disabled).toBe(true);
+    });
   });
 
   it('silent 响应不弹窗：按钮进入运行态，重复点击不二次 open', async () => {

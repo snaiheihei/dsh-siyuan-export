@@ -264,6 +264,12 @@ describe('Change 静默链路隔离 E2E（V9–V11）', () => {
     });
     expect(h.siyuan.docs.map((doc) => doc.path)).toEqual(['/默认标题']);
     expect(h.llmCalls).toHaveLength(1); // 重试复用缓存 body，不重调模型
+
+    // 重试复用同一幂等 taskId：新终态仍要通知，并替换旧失败提示（不堆叠）
+    const toasts = h.toasts.list().filter((item) => item.taskKey === 's1:m1');
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]?.kind).toBe('success');
+    expect(toasts[0]?.target?.display).toBe('默认笔记本');
   });
 
   it('V10d（隔离近似）：静默任务不写持久任务文件，数据目录只有 prefs.json', async () => {

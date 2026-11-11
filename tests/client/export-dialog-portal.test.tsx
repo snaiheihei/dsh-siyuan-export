@@ -74,7 +74,7 @@ describe('弹窗 portal（真实试用缺陷修复）', () => {
     expect(overlay.parentElement).toBe(document.body);
   });
 
-  it('导出成功后自动关闭弹窗', async () => {
+  it('导出成功后弹窗保留并显示落点，用户关闭后才移除（FR-012）', async () => {
     const slotProps = {
       messageId: 'm1',
       sessionId: 's1',
@@ -91,6 +91,11 @@ describe('弹窗 portal（真实试用缺陷修复）', () => {
     });
     fireEvent.click(submit);
 
+    // 成功不自动关闭：overlay 仍在，且给出落点
+    expect(await screen.findByText(/已导出到：/)).toBeTruthy();
+    expect(document.querySelector('[data-role="export-dialog-overlay"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
     await waitFor(() => {
       expect(document.querySelector('[data-role="export-dialog-overlay"]')).toBeNull();
     });

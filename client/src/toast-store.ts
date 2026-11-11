@@ -4,6 +4,7 @@
  * 纪律：
  *  - 快照不可变：`list()` 返回稳定引用，供 `useSyncExternalStore` 判等
  *  - 成功/降级约 6s 自动消失；失败常驻（等待用户重试或打开设置）
+ *  - 同一 taskKey 的新终态替换旧提示（重试成功不堆叠、再失败只更新原因）
  *  - 栈上限 3，超出淘汰最旧并清理其定时器
  */
 import type { ErrorInfo, StoragePath } from '../../src/contract';
@@ -73,12 +74,23 @@ export class ToastStore {
 
   push(draft: ToastDraft): ToastItem {
     const item: ToastItem = { ...draft, id: `toast-${(this.seq += 1)}` };
-    const next = [...this.items, item];
-    while (next.length > this.max) {
-      const evicted = next.shift()!;
-      this.clearTimer(evicted.id);
+    const existingIndex =
+      draft.taskKey === null
+        ? -1
+        : this.items.findIndex((entry) => entry.taskKey === draft.taskKey);
+    if (existingIndex >= 0) {
+      this.clearTimer(this.items[existingIndex]!.id);
+      const next = [...this.items];
+      next[existingIndex] = item;
+      this.items = next;
+    } else {
+      const next = [...this.items, item];
+      while (next.length > this.max) {
+        const evicted = next.shift()!;
+        this.clearTimer(evicted.id);
+      }
+      this.items = next;
     }
-    this.items = next;
     if (item.kind === 'success') {
       this.timerHandles.set(
         item.id,

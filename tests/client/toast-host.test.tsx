@@ -75,7 +75,9 @@ describe('ToastStore 队列', () => {
     renderHost(store);
     act(() => {
       for (let i = 1; i <= 4; i += 1) {
-        store.push(draft({ title: `T${i}`, target: { ...TARGET, display: `P${i}` } }));
+        store.push(
+          draft({ taskKey: `s1:m${i}`, title: `T${i}`, target: { ...TARGET, display: `P${i}` } }),
+        );
       }
     });
     expect(store.list().map((item) => item.title)).toEqual(['T2', 'T3', 'T4']);
@@ -84,11 +86,54 @@ describe('ToastStore 队列', () => {
     expect(screen.queryByText(/P1/)).toBeNull();
   });
 
+  it('同一 taskKey 的新终态替换旧失败提示（重试成功不堆叠）', () => {
+    const store = new ToastStore();
+    renderHost(store);
+    act(() =>
+      store.push(
+        draft({
+          kind: 'failure',
+          error: { category: 'siyuan-connect', message: '连不上', retryable: true },
+        }),
+      ),
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    act(() => store.push(draft({ target: { ...TARGET, display: '重试落点' } })));
+    expect(store.list()).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('重试落点');
+  });
+
+  it('重试再次失败只更新同一条原因', () => {
+    const store = new ToastStore();
+    renderHost(store);
+    act(() =>
+      store.push(
+        draft({
+          kind: 'failure',
+          error: { category: 'siyuan-connect', message: '第一次失败', retryable: true },
+        }),
+      ),
+    );
+    act(() =>
+      store.push(
+        draft({
+          kind: 'failure',
+          error: { category: 'siyuan-connect', message: '第二次失败', retryable: true },
+        }),
+      ),
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toContain('第二次失败');
+    expect(screen.getByRole('alert').textContent).not.toContain('第一次失败');
+  });
+
   it('dismiss 单独清除且不影响其他项', () => {
     const store = new ToastStore();
     act(() => {
-      store.push(draft({ title: 'A' }));
-      store.push(draft({ title: 'B' }));
+      store.push(draft({ taskKey: 's1:a', title: 'A' }));
+      store.push(draft({ taskKey: 's1:b', title: 'B' }));
     });
     const first = store.list()[0];
     if (!first) throw new Error('expected a toast');

@@ -127,6 +127,12 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
   const clientRef = useRef<ExportClient | null>(null);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [loading, setLoading] = useState(false);
+  /** 发起阶段的传输失败：就地提示，不打开弹窗（FR-017/FR-020） */
+  const [openError, setOpenError] = useState<{
+    category: string;
+    message: string;
+    retryable: boolean;
+  } | null>(null);
   const taskRef = useRef<string | null>(null);
 
   const sessionKey = sessionId ?? '';
@@ -162,6 +168,7 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
         if (existing.status === 'failed') void silentManager.retry(silentKey);
         return;
       }
+      setOpenError(null);
       setLoading(true);
       try {
         const opened = await client().open({ messageId, sessionId: sessionKey });
@@ -195,15 +202,8 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
           };
         });
       } catch (err) {
-        setDialog({
-          taskId: '',
-          status: 'failed',
-          title: '',
-          titleEdited: false,
-          target: null,
-          lastPath: null,
-          error: toErrorInfo(err),
-        });
+        // 传输失败没有可确认的任务：不开弹窗，就地提示并提供重试
+        setOpenError(toErrorInfo(err));
       } finally {
         setLoading(false);
       }
@@ -211,25 +211,27 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
     [silentKey, sessionKey, silentManager],
   );
 
-  const submit = useCallback(async () => {
+  /** 提交成功保留弹窗并置 succeeded（FR-012：落点反馈 + 用户关闭，不自动消失） */
+  const commit = useCallback(async () => {
     if (!dialog || !dialog.target) return;
     setDialog((prev) => (prev ? { ...prev, status: 'writing', error: null } : prev));
     try {
-      await client().commit({ taskId: dialog.taskId, title: dialog.title, target: dialog.target });
+      const result = await client().commit({
+        taskId: dialog.taskId,
+        title: dialog.title,
+        target: dialog.target,
+      });
       taskRef.current = null;
-      setDialog(null);
-    } catch (err) {
-      setDialog((prev) => (prev ? { ...prev, status: 'failed', error: toErrorInfo(err) } : prev));
-    }
-  }, [dialog]);
-
-  const retry = useCallback(async () => {
-    if (!dialog) return;
-    setDialog((prev) => (prev ? { ...prev, status: 'writing', error: null } : prev));
-    try {
-      await client().commit({ taskId: dialog.taskId, title: dialog.title, target: dialog.target! });
-      taskRef.current = null;
-      setDialog(null);
+      setDialog((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'succeeded',
+              target: result.target ?? prev.target,
+              error: null,
+            }
+          : prev,
+      );
     } catch (err) {
       setDialog((prev) => (prev ? { ...prev, status: 'failed', error: toErrorInfo(err) } : prev));
     }
@@ -255,6 +257,37 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
         t={t}
         onExport={(id) => void startExport(id)}
       />
+      {openError ? (
+        <span
+          role="alert"
+          data-role="export-open-error"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '12px',
+            lineHeight: '18px',
+            color: 'var(--dsh-danger, #b3261e)',
+          }}
+        >
+          {`${t('feedback.failed')}${openError.message}`}
+          <button
+            type="button"
+            onClick={() => void startExport(messageId)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'inherit',
+              font: 'inherit',
+              padding: '0 2px',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+            }}
+          >
+            {t('settings.retry')}
+          </button>
+        </span>
+      ) : null}
       {dialog ? (
         createPortal(
           <ExportDialog
@@ -269,8 +302,8 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
             setDialog((prev) => (prev ? { ...prev, title: value, titleEdited: true } : prev))
           }
           onTargetChange={(value) => setDialog((prev) => (prev ? { ...prev, target: value } : prev))}
-          onSubmit={() => void submit()}
-          onRetry={() => void retry()}
+          onSubmit={() => void commit()}
+          onRetry={() => void commit()}
           onClose={close}
         >
           <DocTree

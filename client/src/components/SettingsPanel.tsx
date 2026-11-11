@@ -25,6 +25,9 @@ export type SettingsPanelProps = {
 
 type SaveField = 'showDialog' | 'defaultPath';
 
+/** 保存状态条：空闲沿用“即时保存”说明，其余三态可被 aria-live 播报 */
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 interface Snapshot {
   showDialog: boolean;
   defaultPath: StoragePath | null;
@@ -50,6 +53,8 @@ const SETTINGS_CSS = `
 .sye-title { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
 .sye-subtitle { margin: 8px 0 0; font-size: 13px; line-height: 1.5; opacity: 0.64; max-width: 640px; }
 .sye-meta { flex: none; padding-top: 4px; font-size: 12px; opacity: 0.5; white-space: nowrap; }
+.sye-meta[data-state="error"] { opacity: 1; color: var(--dsh-danger, #b3261e); }
+.sye-meta[data-state="saved"] { opacity: 0.72; color: var(--dsh-success, #2f7d5b); }
 .sye-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -209,11 +214,16 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   const [defaultPath, setDefaultPath] = useState<StoragePath | null>(null);
   const [lastPath, setLastPath] = useState<StoragePath | null>(null);
   const [saving, setSaving] = useState<SaveField | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<SaveError | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [siyuanError, setSiyuanError] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
 
   /** 上一次 Host 确认的值（回滚基准；saved 状态用于渲染） */
   const savedRef = useRef<Snapshot | null>(null);
+  /** 探测拿到的根节点；文档树展开时复用，避免重复请求（US4-6） */
+  const rootNodesRef = useRef<TreeNode[] | null>(null);
 
   const client = (): SettingsClient => {
     if (!clientRef.current) {
@@ -221,6 +231,25 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
     }
     return clientRef.current;
   };
+
+  const loadRoots = useCallback(async (force: boolean): Promise<TreeNode[]> => {
+    if (!force && rootNodesRef.current) return rootNodesRef.current;
+    const nodes = (await client().treeList({})).nodes;
+    rootNodesRef.current = nodes;
+    return nodes;
+  }, []);
+
+  const probe = useCallback(async (): Promise<void> => {
+    setProbing(true);
+    try {
+      await loadRoots(true);
+      setSiyuanError(null);
+    } catch (err) {
+      setSiyuanError(err instanceof Error ? err.message : t('settings.siyuanUnavailable'));
+    } finally {
+      setProbing(false);
+    }
+  }, [loadRoots, t]);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -237,12 +266,14 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
       setShowDialog(snapshot.showDialog);
       setDefaultPath(snapshot.defaultPath);
       setLastPath(snapshot.lastPath);
+      // 打开即探测思源可用性；失败只在路径区块提示，不阻断面板
+      void probe();
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : t('settings.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, probe]);
 
   // 一次性加载（面板按 key 常驻，重复挂载会重新拉取 Host 权威值）
   useEffect(() => {
@@ -258,6 +289,7 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
       if (patch.showDialog !== undefined) setShowDialog(patch.showDialog);
       if (patch.defaultPath !== undefined) setDefaultPath(patch.defaultPath);
       setSaving(field);
+      setSaveState('saving');
       setSaveError(null);
       try {
         const view = await client().prefsUpdate(patch);
@@ -271,11 +303,13 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
         setShowDialog(next.showDialog);
         setDefaultPath(next.defaultPath);
         setLastPath(next.lastPath);
+        setSaveState('saved');
       } catch (err) {
         if (field === 'showDialog') setShowDialog(previous.showDialog);
         else setDefaultPath(previous.defaultPath);
         const detail = err instanceof Error ? err.message : t('settings.saveError');
         setSaveError({ field, message: `${t('settings.saveError')}：${detail}` });
+        setSaveState('error');
       } finally {
         setSaving(null);
       }
@@ -286,6 +320,12 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   const modeLabel = showDialog ? t('settings.modeDialog') : t('settings.modeSilent');
   const modeNote = showDialog ? t('settings.modeDialogNote') : t('settings.modeSilentNote');
   const lastPathLabel = lastPath ? lastPath.display : '—';
+  const statusText = {
+    idle: t('settings.autoSave'),
+    saving: t('settings.statusSaving'),
+    saved: t('settings.statusSaved'),
+    error: t('settings.statusError'),
+  }[saveState];
 
   return (
     <section
@@ -301,7 +341,15 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
             <h1 className="sye-title">{t('settings.panel')}</h1>
             <p className="sye-subtitle">{t('settings.description')}</p>
           </div>
-          <span className="sye-meta">{t('settings.autoSave')}</span>
+          <span
+            className="sye-meta"
+            role="status"
+            aria-live="polite"
+            data-role="save-status"
+            data-state={saveState}
+          >
+            {statusText}
+          </span>
         </header>
 
         {loading ? (
@@ -441,6 +489,19 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
                     ) : null}
                   </div>
                 </div>
+                {siyuanError ? (
+                  <div role="alert" className="sye-notice" data-role="siyuan-probe-error">
+                    <span>{`${t('settings.siyuanUnavailable')}：${siyuanError}`}</span>
+                    <button
+                      type="button"
+                      className="sye-btn"
+                      disabled={probing}
+                      onClick={() => void probe()}
+                    >
+                      {probing ? t('settings.loading') : t('settings.retry')}
+                    </button>
+                  </div>
+                ) : null}
                 {treeOpen ? (
                   <div className="sye-tree">
                     <DocTree
@@ -448,9 +509,7 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
                       selected={defaultPath}
                       autoSelectFirst={false}
                       t={t}
-                      onLoadRoot={async (): Promise<TreeNode[]> =>
-                        (await client().treeList({})).nodes
-                      }
+                      onLoadRoot={async (): Promise<TreeNode[]> => loadRoots(false)}
                       onLoadChildren={async (
                         notebookId: string,
                         docId: string,

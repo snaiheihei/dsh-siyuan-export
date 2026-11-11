@@ -139,6 +139,10 @@ export class SilentExportManager {
     const inflight = this.retries.get(key);
     if (inflight) return inflight;
 
+    // Host 的 taskId 就是幂等键，重试会复用同一 taskId；不清掉旧终态标记，
+    // 重试成功/再失败都不会再通知（toast 永远停在第一次失败）。
+    this.clearSettled(key);
+
     const run = (async (): Promise<SilentTaskView> => {
       try {
         const opened = await this.client.open({
@@ -186,6 +190,13 @@ export class SilentExportManager {
       current.status = 'failed';
       current.error = toErrorInfo(err);
       this.emit(current);
+    }
+  }
+
+  private clearSettled(key: string): void {
+    const prefix = `${key}:`;
+    for (const entry of this.settled) {
+      if (entry.startsWith(prefix)) this.settled.delete(entry);
     }
   }
 

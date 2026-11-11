@@ -256,6 +256,34 @@ describe('SilentExportManager（T060）', () => {
     expect(manager.get('s1:m1')?.href).toBe('siyuan://blocks/retry');
   });
 
+  it('retry 复用 Host 幂等 taskId 时仍再次通知终态（写失败 → 重试成功）', async () => {
+    const fake = fakeClient();
+    const settled: SilentTaskView[] = [];
+    const manager = new SilentExportManager({
+      client: fake.client,
+      onSettled: (view) => settled.push({ ...view }),
+    });
+
+    manager.track({ messageId: 'm1', sessionId: 's1' }, silentOpen({ taskId: 'rev-1' }));
+    fake.settle('rev-1', {
+      status: 'failed',
+      error: { category: 'siyuan-connect', message: '写入失败', retryable: true },
+    });
+    await flush();
+    expect(settled.map((view) => view.status)).toEqual(['failed']);
+
+    // Host 的 taskId 就是幂等键：写失败后的重试复用同一 taskId
+    fake.setNextOpen(silentOpen({ taskId: 'rev-1', status: 'writing' }));
+    const retried = await manager.retry('s1:m1');
+    expect(retried.taskId).toBe('rev-1');
+    expect(fake.openCalls).toEqual([{ messageId: 'm1', sessionId: 's1', intent: 'silent' }]);
+
+    fake.settle('rev-1', { status: 'succeeded', href: 'siyuan://blocks/retry' });
+    await flush();
+    expect(settled.map((view) => view.status)).toEqual(['failed', 'succeeded']);
+    expect(settled.at(-1)?.href).toBe('siyuan://blocks/retry');
+  });
+
   it('retry 对非失败任务直接返回现值，不再调用 open', async () => {
     const fake = fakeClient();
     const manager = new SilentExportManager({ client: fake.client });
