@@ -85,6 +85,38 @@ describe('DocTree（T031/T032）', () => {
     expect(await screen.findByText('项目A')).toBeTruthy();
   });
 
+  it('展开后可折叠，再次展开复用缓存不重复加载', async () => {
+    const { onLoadChildren } = setup();
+    fireEvent.click(await screen.findByText('工作'));
+    expect(await screen.findByText('项目A')).toBeTruthy();
+
+    const toggle = () =>
+      (screen.getByText('工作').closest('[role="treeitem"]') as HTMLElement).querySelector(
+        '[data-role="tree-toggle"]',
+      ) as HTMLButtonElement;
+
+    fireEvent.click(toggle());
+    expect(screen.queryByText('项目A')).toBeNull();
+    expect(onLoadChildren).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(toggle());
+    expect(await screen.findByText('项目A')).toBeTruthy();
+    expect(onLoadChildren).toHaveBeenCalledTimes(1);
+  });
+
+  it('折叠不改变已选目标', async () => {
+    const { onSelected } = setup();
+    fireEvent.click(await screen.findByText('工作'));
+    await screen.findByText('项目A');
+    const callsAfterSelect = (onSelected as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    const toggle = (screen.getByText('工作').closest('[role="treeitem"]') as HTMLElement).querySelector(
+      '[data-role="tree-toggle"]',
+    ) as HTMLButtonElement;
+    fireEvent.click(toggle);
+    expect(onSelected).toHaveBeenCalledTimes(callsAfterSelect);
+  });
+
   it('选中节点 → onSelected 收到 StoragePath（display 由 path 拼接）', async () => {
     const { onSelected } = setup();
     fireEvent.click(await screen.findByText('工作'));

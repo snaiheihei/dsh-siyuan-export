@@ -41,14 +41,18 @@ export interface LlmHostLike {
   listProviders(): readonly LlmProviderInfo[] | Promise<readonly LlmProviderInfo[]>;
   listModels(provider: string): Promise<readonly LlmModelInfo[]>;
   prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLike>;
-  /**
-   * 对话 agent 列表（route 优先级最高——学 snail-memory `selectModelRoute`）：
-   * agent.options 携带对话实际使用的 provider/model，优先于 listProviders[0]
-   * （真实失败根因1：列表第一个 provider 往往未配置凭据）。
-   */
-  agents?: {
-    list(): readonly { options: { provider?: string; model?: string } }[];
-  };
+}
+
+/**
+ * 对话 agent 列表（route 优先级最高——学 snail-memory `selectModelRoute`）：
+ * agent.options 携带对话实际使用的 provider/model，优先于 listProviders[0]
+ * （真实失败根因1：列表第一个 provider 往往未配置凭据）。
+ *
+ * 必须与宿主 LLM 服务分开传递：`ctx.llm` 是类实例，方法在原型上，
+ * 展开成普通对象会丢失 `prepareCall`/`listProviders`（真实失败根因3）。
+ */
+export interface AgentsLike {
+  list(): readonly { options: { provider?: string; model?: string } }[];
 }
 
 export interface GenerateInput {
@@ -156,11 +160,12 @@ function rethrowAsAppropriate(err: unknown, signal?: AbortSignal): never {
 
 async function resolveRoute(
   llm: LlmHostLike,
+  agents: AgentsLike | undefined,
   signal?: AbortSignal,
 ): Promise<{ provider: string; model: string }> {
   // 1) 对话 agent 的模型选项（真实失败根因1：优先用对话实际 route）
   try {
-    for (const agent of llm.agents?.list() ?? []) {
+    for (const agent of agents?.list() ?? []) {
       const provider = agent.options?.provider;
       const model = agent.options?.model;
       if (provider && model) return { provider, model };
@@ -187,9 +192,13 @@ async function resolveRoute(
   throw new LlmError('llm-adapter', '宿主未配置可用的模型，请先在模型设置中添加', false);
 }
 
-async function runGenerate(llm: LlmHostLike, input: GenerateInput): Promise<string> {
+async function runGenerate(
+  llm: LlmHostLike,
+  input: GenerateInput,
+  agents?: AgentsLike,
+): Promise<string> {
   input.signal?.throwIfAborted();
-  const route = await resolveRoute(llm, input.signal);
+  const route = await resolveRoute(llm, agents, input.signal);
   const maxTokens = input.maxTokens ?? DEFAULT_MAX_TOKENS;
 
   let prepared: PreparedLike;
@@ -239,10 +248,9 @@ async function runGenerate(llm: LlmHostLike, input: GenerateInput): Promise<stri
 /** 构建宿主 LLM 网关（生产注入 ctx.llm；agents 用于 route 优先级） */
 export function createHostLlmGateway(
   llm: LlmHostLike,
-  agents?: LlmHostLike['agents'],
+  agents?: AgentsLike,
 ): LlmGateway {
-  const host: LlmHostLike = agents ? { ...llm, agents } : llm;
   return {
-    generate: (input: GenerateInput) => runGenerate(host, input),
+    generate: (input: GenerateInput) => runGenerate(llm, input, agents),
   };
 }

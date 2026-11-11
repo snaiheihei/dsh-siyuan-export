@@ -54,6 +54,22 @@ const BUTTON_STYLE: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const CARET_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '14px',
+  height: '14px',
+  padding: 0,
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  font: 'inherit',
+  lineHeight: 1,
+  cursor: 'pointer',
+  opacity: 0.7,
+};
+
 function samePath(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((segment, index) => segment === b[index]);
 }
@@ -101,6 +117,16 @@ export function DocTree(props: DocTreeProps): JSX.Element {
     setExpanded((prev) => {
       const next = new Set(prev);
       next.add(key);
+      return next;
+    });
+  }, []);
+
+  /** 折叠/展开切换（独立于行点击，避免折叠时改变目标路径） */
+  const toggleKey = useCallback((key: string): void => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, []);
@@ -254,6 +280,20 @@ export function DocTree(props: DocTreeProps): JSX.Element {
     }
   };
 
+  /** 指示符点击：已展开则折叠；未展开且未加载则先加载，否则直接展开 */
+  const handleToggle = (node: TreeNode): void => {
+    if (expanded.has(node.id)) {
+      toggleKey(node.id);
+      return;
+    }
+    if (!childrenMap[node.id]) {
+      if (node.kind === 'notebook') void loadChildren(node.id, node.id, '');
+      else void loadChildren(node.id, node.notebookId, node.id);
+    } else {
+      expandKey(node.id);
+    }
+  };
+
   const retry = (): void => {
     if (!error) return;
     if (error.key === 'root') void loadRoot();
@@ -292,7 +332,24 @@ export function DocTree(props: DocTreeProps): JSX.Element {
           aria-expanded={node.hasChildren ? open : undefined}
           aria-selected={selectedRow}
         >
-          <span style={{ opacity: 0.6 }}>{node.hasChildren ? (open ? '▾' : '▸') : '·'}</span>
+          {node.hasChildren ? (
+            <button
+              type="button"
+              data-role="tree-toggle"
+              aria-label={open ? t('tree.collapse') : t('tree.expand')}
+              aria-expanded={open}
+              disabled={loading}
+              onClick={(event) => {
+                event.stopPropagation();
+                handleToggle(node);
+              }}
+              style={CARET_STYLE}
+            >
+              {open ? '▾' : '▸'}
+            </button>
+          ) : (
+            <span style={{ opacity: 0.6 }}>·</span>
+          )}
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {node.name}
           </span>

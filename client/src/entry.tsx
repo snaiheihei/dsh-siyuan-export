@@ -129,7 +129,8 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
     setDialog((prev) => (prev ? { ...prev, status: 'writing', error: null } : prev));
     try {
       await client().commit({ taskId: dialog.taskId, title: dialog.title, target: dialog.target });
-      setDialog((prev) => (prev ? { ...prev, status: 'succeeded', error: null } : prev));
+      taskRef.current = null;
+      setDialog(null);
     } catch (err) {
       setDialog((prev) => (prev ? { ...prev, status: 'failed', error: toErrorInfo(err) } : prev));
     }
@@ -140,7 +141,8 @@ export function SiyuanExportAction(props: SiyuanExportActionProps): JSX.Element 
     setDialog((prev) => (prev ? { ...prev, status: 'writing', error: null } : prev));
     try {
       await client().commit({ taskId: dialog.taskId, title: dialog.title, target: dialog.target! });
-      setDialog((prev) => (prev ? { ...prev, status: 'succeeded', error: null } : prev));
+      taskRef.current = null;
+      setDialog(null);
     } catch (err) {
       setDialog((prev) => (prev ? { ...prev, status: 'failed', error: toErrorInfo(err) } : prev));
     }

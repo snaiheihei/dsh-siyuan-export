@@ -129,14 +129,38 @@ describe('createHostLlmGateway.generate', () => {
         { id: provider === 'p-dialog' ? 'm-dialog' : 'm-x', name: 'm' },
       ],
       prepareCall,
-      agents: { list: () => [{ options: { provider: 'p-dialog', model: 'm-dialog' } }] },
     };
-    const gateway = createHostLlmGateway(plain as unknown as LlmHostLike);
+    const agents = { list: () => [{ options: { provider: 'p-dialog', model: 'm-dialog' } }] };
+    const gateway = createHostLlmGateway(plain as unknown as LlmHostLike, agents);
     await gateway.generate({ content: 'x' });
     const firstConfig = prepareCall.mock.calls[0]?.[0] as
       | { provider?: string; model?: string }
       | undefined;
     expect(firstConfig).toMatchObject({ provider: 'p-dialog', model: 'm-dialog' });
+  });
+
+  it('宿主 ctx.llm 为类实例时保留原型方法（真实失败根因3：展开对象丢失 prepareCall）', async () => {
+    class PrototypeLlm {
+      listProviders() {
+        return [{ id: 'p1', name: 'P1' }];
+      }
+      async listModels() {
+        return [{ id: 'm1', name: 'm1' }];
+      }
+      async prepareCall(config: { provider: string; model: string; maxTokens?: number }) {
+        return {
+          config,
+          stream: () =>
+            (async function* () {
+              yield { type: 'text-delta', index: 0, text: '{"title":"T","body":"B"}' } as never;
+              yield { type: 'finish', reason: { kind: 'stop' } } as never;
+            })(),
+        };
+      }
+    }
+    const agents = { list: () => [{ options: { provider: 'p1', model: 'm1' } }] };
+    const gateway = createHostLlmGateway(new PrototypeLlm() as unknown as LlmHostLike, agents);
+    await expect(gateway.generate({ content: 'x' })).resolves.toBe('{"title":"T","body":"B"}');
   });
 
   it('stream 请求展开 prepared.config（真实失败根因2：自拼字段缺 adapterDefaults → INVALID_PREPARED_CALL）', async () => {

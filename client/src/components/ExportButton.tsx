@@ -14,7 +14,6 @@ export type ExportButtonProps = {
 
 export function ExportButton(props: ExportButtonProps): JSX.Element {
   const { messageId, loading = false, onExport, t } = props;
-  const label = loading ? t('button.exporting') : t('button.export');
   return (
     <button
       type="button"
@@ -42,7 +41,30 @@ export function ExportButton(props: ExportButtonProps): JSX.Element {
         padding: '2px 6px',
       }}
     >
-      {label}
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+        <path
+          d="M8 10V2.5M5 5.5L8 2.5l3 3"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
     </button>
   );
 }

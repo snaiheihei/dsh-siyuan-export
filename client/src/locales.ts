@@ -41,6 +41,8 @@ export const zh = {
   'tree.retry': '重试',
   'tree.selected': '已选中',
   'tree.loadError': '加载失败',
+  'tree.expand': '展开',
+  'tree.collapse': '折叠',
 } satisfies Record<string, string>
 
 /** 本命名空间的键集 */
@@ -87,6 +89,8 @@ export const en = {
   'tree.retry': 'Retry',
   'tree.selected': 'Selected',
   'tree.loadError': 'Loading failed',
+  'tree.expand': 'Expand',
+  'tree.collapse': 'Collapse',
 } satisfies Record<SiyuanExportKey, string>
 
 /** 有引导文案的错误类别（对应 `guide.${category}` 字典键） */

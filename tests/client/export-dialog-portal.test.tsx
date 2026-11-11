@@ -15,13 +15,20 @@ import type { ExportClient } from '../../client/src/rpc';
 
 afterEach(cleanup);
 
+const TARGET = {
+  notebookId: 'nb',
+  notebookName: 'N',
+  parentSegments: [],
+  display: 'N',
+};
+
 function fakeClient(): ExportClient {
   return {
     open: vi.fn(async () => ({
       taskId: 't1',
       status: 'ready',
       title: 'T',
-      lastPath: null,
+      lastPath: TARGET,
       error: null,
     })),
     state: vi.fn(async () => ({ status: 'ready', title: 'T', error: null })),
@@ -55,5 +62,27 @@ describe('弹窗 portal（真实试用缺陷修复）', () => {
     });
     // portal 判据：overlay 的父节点必须是 body 本身（非 portal 时是 RTL 的 container div）
     expect(overlay.parentElement).toBe(document.body);
+  });
+
+  it('导出成功后自动关闭弹窗', async () => {
+    const slotProps = {
+      messageId: 'm1',
+      sessionId: 's1',
+      t: zhT,
+      clientFactory: fakeClient,
+    } as unknown as React.ComponentProps<typeof SiyuanExportAction>;
+    render(<SiyuanExportAction {...slotProps} />);
+    fireEvent.click(await screen.findByRole('button', { name: '导出到思源' }));
+
+    const submit = await waitFor(() => {
+      const el = document.querySelector('[data-role="submit"]') as HTMLButtonElement | null;
+      if (!el) throw new Error('提交按钮未出现');
+      return el;
+    });
+    fireEvent.click(submit);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-role="export-dialog-overlay"]')).toBeNull();
+    });
   });
 });

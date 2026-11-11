@@ -41,11 +41,13 @@ function render(props: Partial<ButtonProps> = {}): {
 }
 
 describe('ExportButton（T023）', () => {
-  it('渲染「导出到思源」文案与 aria-label', () => {
+  it('渲染 SVG 图标与 aria-label', () => {
     const { element } = render();
     expect(element.type).toBe('button');
-    expect(element.props.children).toBe('导出到思源');
     expect(element.props['aria-label']).toBe('导出到思源');
+    const icon = element.props.children as { type: string; props: Record<string, unknown> };
+    expect(icon.type).toBe('svg');
+    expect(icon.props['aria-hidden']).toBe('true');
   });
 
   it('点击触发 onExport 并带上 messageId', () => {
