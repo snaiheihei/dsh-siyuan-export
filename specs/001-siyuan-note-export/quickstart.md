@@ -139,8 +139,8 @@ node "<dsh-repo>\apps\cli\lib\bin.js" --profile web --dump-config   # 仅证 bun
 | 场景 | 状态 | 证据 / 说明 |
 |---|---|---|
 | V0 构建与隔离安装 | ✅ | `npm pack` → 隔离 `plugin add` exit 0 → `--dump-config` 入选无 skip → 冷启动 200（T009/T026/T033 三次执行） |
-| V1 消息行按钮渲染 | ⏳ | 注册路径单测覆盖（T008 2/2）+ 产物含 slot key（T026）；**真实对话中按钮出现需浏览器手工核验** |
-| V2 标题部分（打开<1s、回填不覆盖） | ✅（逻辑）/ ⏳（渲染） | 逻辑单测 T025 9/9 + T016；树部分三层 E2E 真实数据（T033）；浏览器计时待手工 |
+| V1 消息行按钮渲染 | ✅ | 注册路径单测覆盖（T008 2/2）+ 产物含 slot key（T026）+ 真实对话中按钮渲染已由用户手工核验（2026-11-11，构建 c247b5e） |
+| V2 标题部分（打开<1s、回填不覆盖） | ✅（逻辑 + 真实渲染） | 逻辑单测 T025 9/9 + T016；真实浏览器渲染已核验（用户 2026-11-11）；精确打开耗时未记录 |
 | V2 树逐层展开与默认路径 | ✅ | 隔离 Host `tree.list` 三层真实：1 本 → 18 根文档 → /AI 下 9 子文档（T033） |
 | V3 真实写入思源 | ✅ | 真实思源 E2E：createNote 落盘 + 回读 + formatNote 元数据随文（siyuan-real.test.ts） |
 | V4 幂等防重 | ✅ | T016 幂等 open / writing 拒绝 + T019 集成（同键只调一次 LLM） |
@@ -180,17 +180,17 @@ node "<dsh-repo>\apps\cli\lib\bin.js" --profile web --dump-config   # 仅证 bun
 
 ## Change 2026-11-11 执行状态
 
-> 图例：✅ 当次会话命令/隔离 E2E 已通过　⏳ 待真实宿主 / 浏览器 / 真实模型手工核验
+> 图例：✅ 自动化/隔离 E2E 已通过或用户真实宿主手工核验　⏳ 仍缺可归档证据
 
 | 场景 | 状态 | 证据 / 说明 |
 |---|---|---|
-| V8 侧栏入口与设置面板 | ✅（组件/逻辑）/ ⏳（真实宿主渲染） | `npx vitest run tests/client/settings-panel.test.tsx tests/unit/prefs.test.ts` → 18/18（9+9）；`tests/client/slot-registration.test.ts` → 4/4（含 `shell.overlay` 第四处注入）；真实侧栏图标/键盘/截图待手工 |
-| V9 静默导出成功 | ✅（隔离链路）/ ⏳（浏览器计时） | `tests/e2e/change-silent.test.ts` → V9 通过：开关关闭分派 `silent` 不弹窗、生成中可并行发起第二条、success toast 含落点；浏览器 20 次计时与录屏待手工 |
-| V10 失败与重试 | ✅（a/b/d 隔离近似）/ ⏳（c/e 真实宿主） | 失败 toast 常驻含 `siyuan-connect` 原因；重试只落一篇且不重调 LLM；数据目录仅 `prefs.json`；「打开设置」仅单测回调，`ctx.layout.selectPanel` 真实路由待手工 |
-| V11 并发与生命周期 | ✅（隔离链路） | 3 条并发各 1 篇、重复点击零新增；无订阅者时单例续跑并落 toast，重挂载读终态 |
-| V12 偏好持久化与迁移 | ✅（单测）/ ⏳（真实重启） | `tests/unit/prefs.test.ts` → 9/9（含 v1→v2 与损坏 JSON）；真实重启与 `prefs.json` 前后对照待手工 |
-| 全量回归 | ✅ | `npx vitest run` 连续 3 次 → 30 files / **219 passed + 1 skipped**；`npm run typecheck` / `lint` → 0 |
+| V8 侧栏入口与设置面板 | ✅（组件/逻辑 + 真实宿主） | `npx vitest run tests/client/settings-panel.test.tsx tests/unit/prefs.test.ts` → 18/18（9+9）；`tests/client/slot-registration.test.ts` → 4/4（含 `shell.overlay` 第四处注入）；真实侧栏图标/键盘/面板渲染已由用户手工核验（2026-11-11，构建 c247b5e） |
+| V9 静默导出成功 | ✅（隔离链路 + 真实宿主） | `tests/e2e/change-silent.test.ts` → V9 通过：开关关闭分派 `silent` 不弹窗、生成中可并行发起第二条、success toast 含落点；真实宿主浏览器操作已由用户手工核验（2026-11-11，构建 c247b5e），20 次计时与录屏未归档 |
+| V10 失败与重试 | ✅（隔离 + 真实宿主） | 失败 toast 常驻含 `siyuan-connect` 原因；重试只落一篇且不重调 LLM；数据目录仅 `prefs.json`；真实宿主下 a–e 与「打开设置」面板路由已由用户手工核验（2026-11-11，构建 c247b5e） |
+| V11 并发与生命周期 | ✅（隔离链路 + 真实宿主） | 3 条并发各 1 篇、重复点击零新增；无订阅者时单例续跑并落 toast，重挂载读终态；真实宿主下切换会话续跑已由用户手工核验（2026-11-11） |
+| V12 偏好持久化与迁移 | ✅（单测 + 真实重启） | `tests/unit/prefs.test.ts` → 9/9（含 v1→v2 与损坏 JSON）；`tests/e2e/change-settings.test.ts` → 3/3；真实重启后偏好保留已由用户手工核验（2026-11-11，构建 c247b5e） |
+| 全量回归 | ✅ | T066–T072 后 `npm test` → 31 files / **235 passed + 1 skipped**；`npm run typecheck` / `lint` → 0 |
 
-**仍未真实复现，不得标记通过**：V8 真实渲染/截图/键盘、V9 浏览器计时与录屏、V10c/V10e 真实宿主行为、V10d 真实关窗与重启、V12 真实重启迁移，以及真实模型与真实思源写入（本 Change 的隔离 E2E 使用 fake 替身）。
+**真实宿主手工核验（2026-11-11 · 用户执行）**：真实 dsh 安装/重启、真实思源写入、真实浏览器渲染与 V8–V12 手工项均已通过（构建 c247b5e，含 Phase 12 修复）。仍未归档的证据：V5A 独立模型小请求记录、SC-001/002/003/004 的计时与抽样、V8/V9 截图与录屏。
 
 
