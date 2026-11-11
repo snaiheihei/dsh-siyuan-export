@@ -7,7 +7,7 @@ description: "Task list template for feature implementation"
 
 **Input**: Design documents from `/specs/001-siyuan-note-export/`
 
-**Prerequisites**: plan.md（技术栈/结构）、spec.md（用户故事与优先级）、tech-decisions.md（已拍板选型）、research.md（R1–R5 实证结论）、data-model.md（实体与状态机）、contracts/（rpc.md + siyuan.md）、quickstart.md（验证场景）；过程纪律（工程形态、最小装载链路、Session/RPC/持久化边界、隔离 E2E、避坑速查）全程参照 `develop-dsh-plugin` skill（`~/.dsh/skills/develop-dsh-plugin/SKILL.md`）
+**Prerequisites**: plan.md（技术栈/结构）、spec.md（用户故事与优先级）、tech-decisions.md（已拍板选型 D1–D8）、research.md（R1–R9 实证结论）、data-model.md（实体与状态机）、contracts/（rpc.md + siyuan.md）、quickstart.md（验证场景）；过程纪律（工程形态、最小装载链路、Session/RPC/持久化边界、隔离 E2E、避坑速查）全程参照 `develop-dsh-plugin` skill（`~/.dsh/skills/develop-dsh-plugin/SKILL.md`）
 
 **Tests**: **包含测试任务**——依据 plan.md Testing 分层（Vitest 单元/集成/Client + 隔离 Host E2E）与项目 preset 的实现循环（红 → 绿 → 重构，`.specify/presets/spec-addendum/implement-command-wrapper.md`）。每个故事的测试**先写并确认失败（红）**，再实现（绿）；纯配置/文档/环境任务无红灯，报告写「任务 Txxx 无行为变更」。完成勾选时在行尾附当次验证证据：`验证: <命令> → <结果>`（仅认本会话输出，跑不了写「未验证（原因）」）。
 
@@ -256,3 +256,92 @@ Task: "T023 按钮组件 client/src/components/ExportButton.tsx"
 - [X] T046 提取 `shouldAppendGuide(message, guide)` 命名判重函数（首短语为命名常量），替换 `client/src/components/ExportDialog.tsx:118,125` 两处无解释的 `guide.slice(0, 6)` 魔法值 —— per T036 (partial) [LOW] — 验证: `GUIDE_LEAD_PHRASE` 常量与 guide 字典首短语对齐（locales.ts），dialog 9/9（四类指引断言仍过）；typecheck 0。无行为变更（等价重构）
 - [X] T047 DocTree 结构重构：提取 `toggleExpanded(key)` 消除 5 处 `Set+add` 重复、提取 `expandToPath` 缩短 ~80 行三层嵌套的初始化 effect 并去掉 `matched!` 非空断言 —— per plan: DocTree 组件 (partial) [LOW] — 验证: 重构为 `expandKey`+`expandToPath`（局部常量 `hit` 替代非空断言、effect 瘦身至 ~20 行），doc-tree 7/7 行为不变；typecheck 0。无行为变更（纯重构）
 - [X] T048 提取 `readLastPath()` 辅助，消除 `src/export/export-service.ts:166,185` 两处重复的 `prefs.read().catch(...)` —— per plan: 存储决策 (partial) [LOW] — 验证: 私有辅助提取后 open 两处调用；全量 135/135 + typecheck/lint/build/pack-check 全 0。无行为变更（纯重构）
+
+---
+
+## Phase 8: Change 2026-11-11 · Shared Foundation
+
+> 依据 spec.md US4/US5、plan.md「Change 增量设计」、data-model §6–§7、contracts/rpc.md 7 方法。按 preset：每个行为任务在**同一复选框**内先写测试（红）再实现（绿）；不设独立测试小节。Append-only：不改 T001–T048。
+
+**Purpose**: Prefs v2、静默落点与 7 方法契约——US4/US5 共同前置。
+
+- [ ] T049 [P] 实现偏好 v2 与 v1 迁移：`version: 2`、`lastPath`、`defaultPath`（`null` = 未配置）、`showDialog`（默认 `true`）、`draft`；文件缺失/JSON 损坏回退默认值，`version === 1` 迁移时保留 `lastPath`/`draft`，显式 `false`/`null` 经 `definedPatch` 保留，写入仍走串行队列 + 临时文件原子切换；测试覆盖缺失默认、v1 保留、损坏回退、`showDialog:false` 不被吞 —— file: tests/unit/prefs.test.ts, src/store/prefs.ts — FR-022
+- [ ] T050 [P] 实现静默落点解析与目标校验：`resolveSilentTarget` 按 `Prefs.defaultPath`（有效）→ `Prefs.lastPath` 笔记本根 → `lsNotebooks` 第一本未关闭笔记本根 → `siyuan-path` 失败；**默认路径存在但失效时直接失败、不回退**；`validateTarget(path)` 校验 notebook 存在且非关闭、`parentSegments` 经 `getIDsByHPath` 可解析，失败返回 `siyuan-path` 且不写入；测试覆盖五分支与「默认路径失效不改道」 —— file: tests/unit/siyuan-target.test.ts, src/siyuan/target.ts — FR-018/FR-023
+- [ ] T051 [P] 扩展共享契约与 prefs RPC：`RpcMethod` 增至 7 个，新增 `prefs.get`（返回 `showDialog/defaultPath/lastPath`，损坏时默认值不报错）与 `prefs.update`（`undefined` 不修改、显式 `false`/`null` 保留、`defaultPath` 保存前 `validateTarget`）；路由白名单、逐字段校验与统一信封同步；响应不含 Token/body；测试断言方法白名单、默认值、definedPatch、校验失败不落库 —— file: tests/unit/rpc-routes.test.ts, src/contract.ts, src/api/routes.ts, client/src/rpc.ts — FR-015/FR-016/FR-022
+
+**Checkpoint**: `npx vitest run tests/unit/prefs.test.ts tests/unit/siyuan-target.test.ts tests/unit/rpc-routes.test.ts` 全绿；typecheck/lint 0。
+
+---
+
+## Phase 9: User Story 4 - 从侧栏打开导出设置 (Priority: P2)
+
+**Goal**: 左侧栏出现带 `biji.svg` 的「导出设置」入口，点击在主工作区以 tab/面板打开（非模态）；可改默认存放路径与「导出时显示弹窗」开关，保存即生效，重启保留。
+
+**Independent Test**: quickstart **V8** 与 **V12**——侧栏入口可发现、面板非模态、开关/路径即时保存、重启后保留、v1 偏好自动迁移。
+
+- [ ] T052 [US4] 注册侧栏入口与主面板：`sidebar.panellist`（`id = 'siyuan-export.settings'`、`label` 提供可访问名称、组件渲染 `biji.svg`）与 `main`（`key` 与入口 id 一致，点击经宿主 `selectPanel(id)` 切换）；图标用 esbuild `loader: {'.svg':'dataurl'}` + `client/src/svg.d.ts` 内联，加载失败保留 label；测试断言两个 slot 注册、key 一致、handoff 产物含 dataurl 且 apply/inject 可执行 —— file: tests/client/slot-registration.test.ts, tests/client/handoff.test.ts, scripts/build-client.mjs, client/src/svg.d.ts, client/src/components/BijiIcon.tsx, client/src/entry.tsx — FR-014/FR-024
+- [ ] T053 [US4] 实现设置面板的开关与默认路径即时保存：开关默认开启；路径仅可从思源树选择/清除，不接受本机路径；修改即调 `prefs.update`（无全局保存按钮，≤4 次交互），保存中禁用该项，成功后更新「已保存」值，失败回滚 Host 值并就地报错；测试用 fake RPC 覆盖默认值、成功保存、失败回滚、路径清除 —— file: tests/client/settings-panel.test.tsx, client/src/components/SettingsPanel.tsx, client/src/locales.ts, client/src/entry.tsx — FR-015/FR-016/FR-022/SC-010
+- [ ] T054 [P] [US4] 文档树键盘可达：为 `role=treeitem` 行补 roving `tabIndex`、Enter/Space 选择、←/→ 折叠展开、焦点样式走宿主变量；测试断言 Tab 进入、方向键移动/展开、Enter 选中并回调 `StoragePath`，且鼠标行为不变 —— file: tests/client/doc-tree.test.tsx, client/src/components/DocTree.tsx — FR-024
+- [ ] T055 [US4] 设置页加载与离线容错：打开面板先 `prefs.get`；思源不可用时路径区显示原因 + 重试，**已保存路径不被清空**，开关仍可修改；无笔记本时显示空态而非崩溃；测试覆盖加载失败保留值、重试恢复、空笔记本、开关独立可保存 —— file: tests/client/settings-panel.test.tsx, client/src/components/SettingsPanel.tsx — FR-015/FR-022 · US4-6
+- [ ] T056 [US4] 隔离 Host E2E（V8/V12）：独立 `DSH_HOME` 安装后确认侧栏入口注册与主面板 key、`prefs.update` 落盘、重启后偏好保留、v1 `prefs.json` 迁移不丢 `lastPath/draft`；真实浏览器点击/键盘交互按 quickstart 记录为手工证据 —— file: tests/e2e/change-settings.test.ts — 无行为变更（仅隔离验证）
+
+**Checkpoint**: US4 可独立验证——设置面板可用且偏好重启保留，不依赖静默导出。
+
+---
+
+## Phase 10: User Story 5 - 静默一键导出、不打断对话 (Priority: P2)
+
+**Goal**: 开关关闭时点击导出按钮不弹窗；Host 后台生成并自动写入，按钮保持运行态；成功 toast 显示落点并自动消失，失败显示原因与重试；切换会话不中断，不同回复互不阻塞。
+
+**Independent Test**: quickstart **V9–V11**——无弹窗、加载态、跨会话继续、3 并发各 1 篇、toast 成功/失败行为符合 SC-007–009/011。
+
+- [ ] T057 [US5] Host 模式分派与静默联合响应：`export.open` 增加可选 `intent?: 'auto' | 'silent'`；`intent='silent'` 或 `showDialog=false` → `mode:'silent'` 并立即返回 `taskId/status/target/targetFrom/degraded/alreadyRunning/error`，业务失败以 `ok:true + status:'failed'` 返回；`export.state` 增补 `mode/target/href/degraded`，`export.commit` 拒绝静默任务、`export.cancel` 对静默任务返回 `noop`；测试断言 auto 读偏好、silent 不弹窗字段、静默失败仍为数据、dialog 行为不回归 —— file: tests/unit/export-service-silent.test.ts, src/export/export-service.ts, src/contract.ts, src/api/routes.ts — FR-017/FR-019/FR-021
+- [ ] T058 [US5] 静默后台编排与并发边界：open 返回后后台执行「生成 → 自动 commit」；幂等键 = `sessionId:messageId:contentRevision`，同键 `generating/writing` → `alreadyRunning=true` 不启第二条流水线，不同 messageId 并发独立，写入由 `writing` 门闩保护；测试断言立即返回、自动落盘、同键只调一次 LLM/只写一篇、3 条并发各 1 篇 —— file: tests/integration/export-silent.test.ts, src/export/export-service.ts — FR-019/FR-025/SC-011
+- [ ] T059 [US5] 静默失败、重试与降级：目标解析/写入失败 → `failed` 保留原因与 `retryable`，**不改道**；再次 open 复用缓存 body 不重调 LLM；生成失败仍以原文写入并置 `degraded=true`；测试覆盖默认路径失效、连接失败后重试仅一篇、降级仍写入 —— file: tests/integration/export-silent.test.ts, src/export/export-service.ts, src/siyuan/target.ts — FR-020/FR-023/SC-006
+- [ ] T060 [US5] Client 静默任务单例与 RPC 类型：按 `messageId` 维护任务，组件卸载（切会话/面板）不取消、不丢终态；再次挂载从单例恢复加载态；重复点击复用同任务；重试发送 `intent:'silent'`；测试用 fake client 覆盖跨卸载轮询、按 messageId 防重、重试仍静默 —— file: tests/client/silent-export.test.ts, client/src/silent-export.ts, client/src/rpc.ts — FR-019/FR-025
+- [ ] T061 [US5] 导出按钮运行态与静默分派：点击后按响应 `mode` 分流——`dialog` 保持现有弹窗，`silent` **不打开弹窗**、按钮进入加载/运行态并阻止重复触发，终态恢复；测试覆盖两种响应、运行态禁用、重复点击不二次调用、卸载后由单例恢复 —— file: tests/client/export-button.test.tsx, client/src/components/ExportButton.tsx, client/src/entry.tsx — FR-017/FR-019
+- [ ] T062 [US5] 非阻塞 toast：`shell.overlay` 注册 `ToastHost` + `toast-store`；成功/降级显示落点与说明并约 6s 自动消失，失败常驻显示原因 + 「重试」/「打开设置」；栈上限 3、`aria-live="polite"`、成功 `role=status`/失败 `role=alert`、toast 根 `pointer-events:auto`；测试断言自动消失、失败不消失、重试回调、上限淘汰与可访问属性 —— file: tests/client/toast-host.test.tsx, client/src/toast-store.ts, client/src/components/ToastHost.tsx, client/src/entry.tsx, client/src/locales.ts — FR-020/SC-009
+- [ ] T063 [US5] 隔离 Host E2E（V9–V11）：验证关闭开关后点击不弹窗、按钮加载期间对话可继续、切会话后任务完成并出 toast、3 条并发各 1 篇；真实模型/思源写入与浏览器计时按 quickstart 记录为手工证据，不以单测冒充 —— file: tests/e2e/change-silent.test.ts — 无行为变更（仅隔离验证）
+
+**Checkpoint**: US5 可独立验证——静默路径不弹窗、不阻塞、结果可见可重试；US4 设置可回退。
+
+---
+
+## Phase 11: Change 收尾
+
+- [ ] T064 Change 全矩阵证据回填：按 quickstart **V8–V12** 执行并回写执行记录（成功的写命令与结果，未执行的写「未验证（原因）」）；核对 README 使用说明（侧栏设置、静默模式、未验证边界）与 spec/plan/contracts 无漂移 —— file: quickstart.md, README.md, tasks.md — 无行为变更
+
+---
+
+## Change 2026-11-11 · Dependencies & Execution Order
+
+### 关键依赖
+
+```text
+T049 → T053（偏好 v2 → 设置面板读写）
+T051 → T053（prefs RPC → 设置面板）
+T050 → T057（落点解析 → 静默 open）
+T051 → T057（契约/路由 → 模式分派）
+T052 → T053（侧栏/主面板 → 设置内容）
+T053 → T055（面板基础 → 加载/离线容错）
+T054 → T055（树键盘 → 面板内选择器；可先并行开发）
+T052–T055 → T056（US4 E2E）
+T057 → T058 → T059（分派 → 并发编排 → 失败重试；同文件串行）
+T057 → T060 → T061 → T062（契约/单例 → 按钮 → toast；entry.tsx 串行）
+T057–T062 → T063（US5 E2E）
+T049–T063 → T064（证据回填）
+```
+
+### 并行机会
+
+- Foundation：`T049 ∥ T050 ∥ T051`（不同文件；T051 触碰 contract/routes 与其余不冲突）
+- US4：`T054 ∥ T053`（DocTree 与 SettingsPanel 不同文件）；`T052` 先于 `T053` 接线
+- US5：`T057` 完成后，`T058/T059` 同文件串行；`T060` 可在 `T057` 后与 `T058` 并行（Client 与 Host 不同文件）
+- US4 与 US5 可在 Foundation 后并行；`T056` 与 `T063` 分别依赖各自故事完成
+
+### 执行策略
+
+1. 先完成 T049–T051（v2 偏好、落点、7 方法契约）并跑绿。
+2. US4（T052–T056）先交付可发现的设置入口与持久化；可独立演示。
+3. US5（T057–T063）再接通静默链路与 toast；每个行为任务严格红→绿→重构，同文件任务串行。
+4. T064 统一回填 quickstart 证据；未真实验证的项目保持「未验证」。
