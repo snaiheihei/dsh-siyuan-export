@@ -15,10 +15,12 @@ import type {} from '@deepseek-ai/dsh-session';
 // agents 服务（ctx.agents：LLM route 优先取对话实际模型——学 snail-memory selectModelRoute）
 import type {} from '@deepseek-ai/dsh-agent';
 import { registerRpcRoute, type RpcHandlers } from './api/routes';
+import { createPrefsHandlers } from './api/prefs-handlers';
 import { ExportService } from './export/export-service';
 import { createHostLlmGateway } from './export/llm';
 import { createSessionOutputSource } from './export/session-source';
 import { SiyuanClient, createNote } from './siyuan/client';
+import { createTargetIo } from './siyuan/target';
 import { createTreeService } from './siyuan/tree';
 import { PrefsStore } from './store/prefs';
 
@@ -101,6 +103,8 @@ export function apply(ctx: Context, config: SiyuanExportConfig): void {
   ctx.effect(() => {
     const client = new SiyuanClient({ endpoint: config.endpoint, token: config.token });
     const prefs = new PrefsStore(resolveDataDir(config));
+    const targetIo = createTargetIo(client);
+    const prefsHandlers = createPrefsHandlers({ prefs, targetIo });
 
     const service = new ExportService({
       source: createSessionOutputSource(ctx),
@@ -116,6 +120,7 @@ export function apply(ctx: Context, config: SiyuanExportConfig): void {
           }),
       },
       prefs,
+      targetIo,
     });
 
     const handlers: RpcHandlers = {
@@ -135,6 +140,8 @@ export function apply(ctx: Context, config: SiyuanExportConfig): void {
         // 根层文档：docId 缺省/空 → buildRootDocsQuery；有 docId → 直接子文档
         return { nodes: await tree.listChildren({ notebookId, docId: docId ?? '' }) };
       },
+      prefsGet: () => prefsHandlers.prefsGet(),
+      prefsUpdate: (request) => prefsHandlers.prefsUpdate(request),
     };
 
     const disposeRoute = registerRpcRoute(ctx.webServer as never, handlers);

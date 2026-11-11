@@ -40,29 +40,66 @@ export type TaskStatus =
   | 'failed'
   | 'cancelled';
 
+/** 导出模式（Host 权威判定，Client 不得猜测） */
+export type ExportMode = 'dialog' | 'silent';
+
+/** 导出意图：缺省 auto = 读 Prefs.showDialog；silent 恒静默 */
+export type ExportIntent = 'auto' | 'silent';
+
+/** 静默落点来源（contracts/siyuan.md 规则 7） */
+export type TargetFrom = 'default' | 'last' | 'first-notebook';
+
 /** 打开导出；contentRevision 不由 Client 传——Host 读取正文后自行派生（data-model §1） */
 export interface ExportOpenRequest {
   messageId: string;
   sessionId: string;
+  intent?: ExportIntent;
 }
 
-export interface ExportOpenData {
+/** 弹窗模式响应：立即打开弹窗，title 以 state 轮询补齐 */
+export interface ExportDialogOpenData {
+  mode: 'dialog';
   taskId: string;
-  status: TaskStatus;
+  status: 'generating' | 'ready' | 'degraded-ready';
   /** LLM 默认主题名；generating 中为 null */
   title: string | null;
   /** Prefs.lastPath（FR-006），首次为 null */
   lastPath: StoragePath | null;
+  /** Prefs.defaultPath：弹窗目标默认值回退（FR-006/FR-015） */
+  defaultPath: StoragePath | null;
   error: ErrorInfo | null;
 }
+
+/** 静默模式响应：不弹窗，Host 后台生成并自动写入 */
+export interface ExportSilentOpenData {
+  mode: 'silent';
+  taskId: string;
+  status: 'generating' | 'writing' | 'succeeded' | 'failed';
+  /** 已知落点；解析失败为 null */
+  target: StoragePath | null;
+  targetFrom: TargetFrom | null;
+  /** 生成失败已降级为原文 */
+  degraded: boolean;
+  /** 同键任务已在进行，本次未重复启动 */
+  alreadyRunning: boolean;
+  error: ErrorInfo | null;
+}
+
+/** 按 mode 判别的打开响应（Client 必须先判 mode 再解包） */
+export type ExportOpenData = ExportDialogOpenData | ExportSilentOpenData;
 
 export interface ExportStateRequest {
   taskId: string;
 }
 
 export interface ExportStateData {
+  mode: ExportMode;
   status: TaskStatus;
   title: string | null;
+  target: StoragePath | null;
+  /** 成功后可用于「打开笔记」，不可得为 null */
+  href: string | null;
+  degraded: boolean;
   /** 永不返回 body（正文仅 Host 持有） */
   error: ErrorInfo | null;
 }
@@ -108,13 +145,34 @@ export interface TreeListData {
   nodes: TreeNode[];
 }
 
-/** 方法白名单（仅此 5 个，其余一律拒绝） */
+/** 设置页偏好视图（不含 version/draft/Token） */
+export interface PrefsView {
+  /** 缺省 true；false 时导出走静默 */
+  showDialog: boolean;
+  defaultPath: StoragePath | null;
+  lastPath: StoragePath | null;
+}
+
+export type PrefsGetRequest = Record<string, never>;
+export type PrefsGetData = PrefsView;
+
+/** 局部更新：undefined = 不修改；显式 false/null 必须保留 */
+export interface PrefsUpdateRequest {
+  showDialog?: boolean;
+  defaultPath?: StoragePath | null;
+}
+
+export type PrefsUpdateData = PrefsView;
+
+/** 方法白名单（仅此 7 个，其余一律拒绝） */
 export type RpcMethod =
   | 'export.open'
   | 'export.state'
   | 'export.commit'
   | 'export.cancel'
-  | 'tree.list';
+  | 'tree.list'
+  | 'prefs.get'
+  | 'prefs.update';
 
 /** 方法 → 请求/响应映射 */
 export interface RpcContractMap {
@@ -123,6 +181,8 @@ export interface RpcContractMap {
   'export.commit': { req: ExportCommitRequest; res: ExportCommitData };
   'export.cancel': { req: ExportCancelRequest; res: ExportCancelData };
   'tree.list': { req: TreeListRequest; res: TreeListData };
+  'prefs.get': { req: PrefsGetRequest; res: PrefsGetData };
+  'prefs.update': { req: PrefsUpdateRequest; res: PrefsUpdateData };
 }
 
 /** 统一响应信封 */

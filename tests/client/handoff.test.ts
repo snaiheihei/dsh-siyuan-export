@@ -41,8 +41,10 @@ describe('client handoff 产物', () => {
 
     const code = readFileSync(HANDOFF, 'utf8');
     expect(code).toContain('__ModuleLoader__.load');
-    // 无裸 ESM import/export（CJS 闭包工厂要求）
-    expect(code).not.toMatch(/(^|[^\w.])(import|export)\s[\w{*]/m);
+    // 无裸 ESM import/export（CJS 闭包工厂要求）；只认行首语句，避免文案里的 "export xxx" 误报
+    expect(code).not.toMatch(/^\s*(?:import|export)\s[\w{*]/m);
+    // 侧栏图标内联为 dataurl（运行时不发资源请求）
+    expect(code).toContain('data:image/svg+xml');
 
     const captured: Captured = {};
     const sandbox = {

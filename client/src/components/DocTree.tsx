@@ -5,7 +5,7 @@
  * 纪律（contracts/rpc.md + develop-dsh-plugin §7）：
  *  - 懒加载：根层 onLoadRoot（笔记本），展开按层 onLoadChildren（tree.list 懒加载语义）
  *  - stale 响应丢弃：慢的旧请求不覆盖新状态（requestId 比对）
- *  - initialPath 逐层展开并默认选中（T032：上次成功路径）
+ *  - initialPath 逐层展开并默认选中（上次成功路径；无记录时为设置默认路径）
  *  - initialPath 为空时默认选中第一个笔记本根（spec：笔记本根可直接导出）
  *  - 加载失败就地显示原因并可重试（FR-010）
  * 文案经 `siyuan-export` locale 的 t()，不硬编码（T038/T043）。
@@ -15,7 +15,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StoragePath, TreeNode } from '../../../src/contract';
 
 export type DocTreeProps = {
-  /** 上次成功路径（Prefs.lastPath）；null = 首次导出 */
+  /** 初始落点（上次成功路径；缺省回退设置默认路径）；null = 两者都未配置 */
   initialPath: StoragePath | null;
   /** 外部控制的选中态（用于回显） */
   selected: StoragePath | null;
@@ -24,6 +24,11 @@ export type DocTreeProps = {
   /** 按层加载子文档；docId 为空串表示笔记本根层 */
   onLoadChildren: (notebookId: string, docId: string) => Promise<TreeNode[]>;
   onSelected: (target: StoragePath) => void;
+  /**
+   * 无 initialPath 时是否默认选中首个笔记本根（默认 true，服务导出弹窗）。
+   * 设置面板传 false：打开选择器不应未经点击就保存落点。
+   */
+  autoSelectFirst?: boolean;
 } & PropsLocale<'siyuan-export'>;
 
 interface LoadError {
@@ -75,7 +80,7 @@ function samePath(a: readonly string[], b: readonly string[]): boolean {
 }
 
 export function DocTree(props: DocTreeProps): JSX.Element {
-  const { initialPath, selected, onLoadRoot, onLoadChildren, t } = props;
+  const { initialPath, selected, onLoadRoot, onLoadChildren, autoSelectFirst = true, t } = props;
 
   const [roots, setRoots] = useState<TreeNode[] | null>(null);
   const [childrenMap, setChildrenMap] = useState<Record<string, TreeNode[]>>({});
@@ -84,9 +89,13 @@ export function DocTree(props: DocTreeProps): JSX.Element {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [autoSelectedKey, setAutoSelectedKey] = useState<string | null>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  /** roving tabIndex：键盘焦点所在的节点（null = 首个可见节点可 Tab 进入） */
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusActive, setFocusActive] = useState(false);
 
   const requestRef = useRef(0);
   const initialAppliedRef = useRef(false);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
   // onSelected 在初始化逻辑中使用最新引用（一次性初始化，避免 effect 重跑）
   const selectedRef = useRef(props.onSelected);
   selectedRef.current = props.onSelected;
@@ -255,6 +264,7 @@ export function DocTree(props: DocTreeProps): JSX.Element {
         return;
       }
 
+      if (!autoSelectFirst) return;
       // 首次导出（lastPath=null）：默认选中第一个笔记本根，使「笔记本根可直接导出」
       const first = nodes[0]!;
       setAutoSelectedKey(first.id);
@@ -300,6 +310,80 @@ export function DocTree(props: DocTreeProps): JSX.Element {
     else void loadChildren(error.key, error.notebookId, error.docId);
   };
 
+  /** 当前可见（已展开）节点序列，供方向键漫游；首个节点可 Tab 进入（roving tabIndex） */
+  const visibleNodes: TreeNode[] = [];
+  const collectVisible = (node: TreeNode): void => {
+    visibleNodes.push(node);
+    if (expanded.has(node.id)) childrenMap[node.id]?.forEach(collectVisible);
+  };
+  roots?.forEach(collectVisible);
+  const tabbableId =
+    focusId && visibleNodes.some((node) => node.id === focusId) ? focusId : visibleNodes[0]?.id;
+
+  // 键盘移动后把 DOM 焦点同步到目标行
+  useEffect(() => {
+    if (!focusId) return;
+    rowRefs.current.get(focusId)?.focus();
+  }, [focusId]);
+
+  const parentOf = (node: TreeNode): TreeNode | undefined => {
+    for (const candidate of visibleNodes) {
+      if (childrenMap[candidate.id]?.some((child) => child.id === node.id)) return candidate;
+    }
+    return undefined;
+  };
+
+  /**
+   * 键盘树导航（ARIA tree 模式）：↑/↓ 漫游可见节点，→ 展开或进入子层，
+   * ← 折叠或回到父层，Enter/Space 选中（与行点击同语义）。鼠标行为不变。
+   */
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, node: TreeNode): void => {
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        event.preventDefault();
+        const index = visibleNodes.findIndex((item) => item.id === node.id);
+        const target = visibleNodes[index + (event.key === 'ArrowDown' ? 1 : -1)];
+        if (target) setFocusId(target.id);
+        return;
+      }
+      case 'ArrowRight': {
+        event.preventDefault();
+        if (node.hasChildren && !expanded.has(node.id)) {
+          if (!childrenMap[node.id]) {
+            if (node.kind === 'notebook') void loadChildren(node.id, node.id, '');
+            else void loadChildren(node.id, node.notebookId, node.id);
+          } else {
+            expandKey(node.id);
+          }
+          return;
+        }
+        const firstChild = expanded.has(node.id) ? childrenMap[node.id]?.[0] : undefined;
+        if (firstChild) setFocusId(firstChild.id);
+        return;
+      }
+      case 'ArrowLeft': {
+        event.preventDefault();
+        if (node.hasChildren && expanded.has(node.id)) {
+          toggleKey(node.id);
+          return;
+        }
+        const parent = parentOf(node);
+        if (parent) setFocusId(parent.id);
+        return;
+      }
+      case 'Enter':
+      case ' ':
+      case 'Spacebar': {
+        event.preventDefault();
+        handleNodeClick(node);
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
   const isSelected = (node: TreeNode): boolean => {
     const target = buildTarget(node);
     return (
@@ -313,22 +397,39 @@ export function DocTree(props: DocTreeProps): JSX.Element {
     const loading = loadingKey === node.id;
     const selectedRow = isSelected(node);
     const hovered = hoverKey === node.id;
+    const tabbable = tabbableId === node.id;
+    const focusRing = focusActive && focusId === node.id;
     return (
       <div key={node.id}>
         <div
+          ref={(element) => {
+            if (element) rowRefs.current.set(node.id, element);
+            else rowRefs.current.delete(node.id);
+          }}
           style={{
             ...ROW_STYLE,
             paddingLeft: `${6 + depth * 14}px`,
             // app 规范：selected 用 active 灰底 fill（accent 不上 chrome）
             background: selectedRow ? 'var(--dsh-active, #eeeeee)' : 'transparent',
             // hover 用 1px outline，不改 fill（app 规范：No hover that changes the fill）
-            outline: hovered && !selectedRow ? '1px solid var(--dsh-control, #d1d5db)' : 'none',
-            outlineOffset: '-1px',
+            outline: focusRing
+              ? '2px solid var(--dsh-focus, var(--dsh-accent, #2f6fed))'
+              : hovered && !selectedRow
+                ? '1px solid var(--dsh-control, #d1d5db)'
+                : 'none',
+            outlineOffset: focusRing ? '-2px' : '-1px',
           }}
           onClick={() => handleNodeClick(node)}
+          onKeyDown={(event) => handleKeyDown(event, node)}
+          onFocus={() => {
+            setFocusId(node.id);
+            setFocusActive(true);
+          }}
+          onBlur={() => setFocusActive(false)}
           onMouseEnter={() => setHoverKey(node.id)}
           onMouseLeave={() => setHoverKey((prev) => (prev === node.id ? null : prev))}
           role="treeitem"
+          tabIndex={tabbable ? 0 : -1}
           aria-expanded={node.hasChildren ? open : undefined}
           aria-selected={selectedRow}
         >
@@ -339,6 +440,7 @@ export function DocTree(props: DocTreeProps): JSX.Element {
               aria-label={open ? t('tree.collapse') : t('tree.expand')}
               aria-expanded={open}
               disabled={loading}
+              tabIndex={-1}
               onClick={(event) => {
                 event.stopPropagation();
                 handleToggle(node);
@@ -370,7 +472,12 @@ export function DocTree(props: DocTreeProps): JSX.Element {
   };
 
   return (
-    <div data-role="doc-tree" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+    <div
+      data-role="doc-tree"
+      role="tree"
+      aria-label={t('field.target')}
+      style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
+    >
       {error ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
           <span style={{ color: 'var(--dsh-danger, #c0392b)' }}>{error.message}</span>
@@ -381,6 +488,11 @@ export function DocTree(props: DocTreeProps): JSX.Element {
       ) : null}
       {roots === null && !error ? (
         <div style={{ fontSize: '12px', opacity: 0.6 }}>{t('tree.loading')}</div>
+      ) : null}
+      {roots !== null && roots.length === 0 && !error ? (
+        <div data-role="tree-empty" style={{ fontSize: '12px', opacity: 0.6 }}>
+          {t('tree.empty')}
+        </div>
       ) : null}
       {roots?.map((node) => renderRow(node, 0))}
     </div>

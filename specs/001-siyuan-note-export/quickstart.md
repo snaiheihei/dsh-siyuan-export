@@ -180,6 +180,17 @@ node "<dsh-repo>\apps\cli\lib\bin.js" --profile web --dump-config   # 仅证 bun
 
 ## Change 2026-11-11 执行状态
 
-V8–V12 尚未执行（plan 阶段）：侧栏/面板渲染、静默并发、toast 可见性与 v1→v2 迁移均为待验证项，实现后按上表逐条记录；**未真实复现前不得标记通过**。
+> 图例：✅ 当次会话命令/隔离 E2E 已通过　⏳ 待真实宿主 / 浏览器 / 真实模型手工核验
+
+| 场景 | 状态 | 证据 / 说明 |
+|---|---|---|
+| V8 侧栏入口与设置面板 | ✅（组件/逻辑）/ ⏳（真实宿主渲染） | `npx vitest run tests/client/settings-panel.test.tsx tests/unit/prefs.test.ts` → 18/18（9+9）；`tests/client/slot-registration.test.ts` → 4/4（含 `shell.overlay` 第四处注入）；真实侧栏图标/键盘/截图待手工 |
+| V9 静默导出成功 | ✅（隔离链路）/ ⏳（浏览器计时） | `tests/e2e/change-silent.test.ts` → V9 通过：开关关闭分派 `silent` 不弹窗、生成中可并行发起第二条、success toast 含落点；浏览器 20 次计时与录屏待手工 |
+| V10 失败与重试 | ✅（a/b/d 隔离近似）/ ⏳（c/e 真实宿主） | 失败 toast 常驻含 `siyuan-connect` 原因；重试只落一篇且不重调 LLM；数据目录仅 `prefs.json`；「打开设置」仅单测回调，`ctx.layout.selectPanel` 真实路由待手工 |
+| V11 并发与生命周期 | ✅（隔离链路） | 3 条并发各 1 篇、重复点击零新增；无订阅者时单例续跑并落 toast，重挂载读终态 |
+| V12 偏好持久化与迁移 | ✅（单测）/ ⏳（真实重启） | `tests/unit/prefs.test.ts` → 9/9（含 v1→v2 与损坏 JSON）；真实重启与 `prefs.json` 前后对照待手工 |
+| 全量回归 | ✅ | `npx vitest run` 连续 3 次 → 30 files / **219 passed + 1 skipped**；`npm run typecheck` / `lint` → 0 |
+
+**仍未真实复现，不得标记通过**：V8 真实渲染/截图/键盘、V9 浏览器计时与录屏、V10c/V10e 真实宿主行为、V10d 真实关窗与重启、V12 真实重启迁移，以及真实模型与真实思源写入（本 Change 的隔离 E2E 使用 fake 替身）。
 
 

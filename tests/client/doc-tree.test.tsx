@@ -186,6 +186,63 @@ describe('DocTree（T031/T032）', () => {
     expect(onSelected).toHaveBeenCalledWith(initialPath);
   });
 
+  it('键盘 roving tabIndex：首个可见节点 Tab 可达，方向键移动焦点（T054）', async () => {
+    const onLoadRoot = vi.fn(async () => [
+      { ...NOTEBOOK, id: 'nb-1', name: '工作' },
+      { ...NOTEBOOK, id: 'nb-2', name: '生活' },
+    ]);
+    setup({ onLoadRoot });
+    const rows = await screen.findAllByRole('treeitem');
+    expect(rows[0]!.tabIndex).toBe(0);
+    expect(rows[1]!.tabIndex).toBe(-1);
+
+    rows[0]!.focus();
+    fireEvent.keyDown(rows[0]!, { key: 'ArrowDown' });
+    await waitFor(() => expect(document.activeElement).toBe(rows[1]));
+    await waitFor(() => expect(rows[1]!.tabIndex).toBe(0));
+    expect(rows[0]!.tabIndex).toBe(-1);
+
+    fireEvent.keyDown(rows[1]!, { key: 'ArrowUp' });
+    await waitFor(() => expect(document.activeElement).toBe(rows[0]));
+  });
+
+  it('键盘 → 展开、← 折叠（T054）', async () => {
+    const { onLoadChildren } = setup();
+    const row = await screen.findByRole('treeitem');
+    row.focus();
+
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    await waitFor(() => expect(onLoadChildren).toHaveBeenCalledWith('nb-1', ''));
+    expect(await screen.findByText('项目A')).toBeTruthy();
+
+    fireEvent.keyDown(row, { key: 'ArrowLeft' });
+    await waitFor(() => expect(screen.queryByText('项目A')).toBeNull());
+  });
+
+  it('键盘 Enter/Space 选中并回调 StoragePath，鼠标行为不变（T054）', async () => {
+    const { onSelected } = setup();
+    fireEvent.click(await screen.findByText('工作'));
+    const docRow = (await screen.findByText('项目A')).closest('[role="treeitem"]') as HTMLElement;
+    docRow.focus();
+
+    fireEvent.keyDown(docRow, { key: 'Enter' });
+    expect(onSelected).toHaveBeenCalledWith({
+      notebookId: 'nb-1',
+      notebookName: '工作',
+      parentSegments: ['项目A'],
+      display: '工作 / 项目A',
+    } satisfies StoragePath);
+
+    (onSelected as ReturnType<typeof vi.fn>).mockClear();
+    fireEvent.keyDown(docRow, { key: ' ' });
+    expect(onSelected).toHaveBeenCalledWith({
+      notebookId: 'nb-1',
+      notebookName: '工作',
+      parentSegments: ['项目A'],
+      display: '工作 / 项目A',
+    } satisfies StoragePath);
+  });
+
   it('stale 响应丢弃：慢的旧请求不覆盖新状态', async () => {
     let resolveSlow: ((nodes: TreeNode[]) => void) | null = null;
     const slow = new Promise<TreeNode[]>((resolve) => {

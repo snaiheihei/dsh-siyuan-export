@@ -25,13 +25,23 @@ const TARGET = {
 function fakeClient(): ExportClient {
   return {
     open: vi.fn(async () => ({
+      mode: 'dialog' as const,
       taskId: 't1',
-      status: 'ready',
+      status: 'ready' as const,
       title: 'T',
       lastPath: TARGET,
+      defaultPath: null,
       error: null,
     })),
-    state: vi.fn(async () => ({ status: 'ready', title: 'T', error: null })),
+    state: vi.fn(async () => ({
+      mode: 'dialog' as const,
+      status: 'ready' as const,
+      title: 'T',
+      target: null,
+      href: null,
+      degraded: false,
+      error: null,
+    })),
     commit: vi.fn(async () => ({
       status: 'succeeded' as const,
       target: { notebookId: 'nb', notebookName: 'N', parentSegments: [], display: 'N' },

@@ -86,6 +86,10 @@ async function makeService(options: {
     gateway,
     writer,
     prefs,
+    targetIo: {
+      listNotebooks: async () => [{ id: 'nb-1', name: '工作' }],
+      getIdsByHPath: async () => [],
+    },
   });
 
   return {
@@ -151,6 +155,10 @@ describe('失败恢复（T035）', () => {
       gateway: hanging,
       writer: { write: async (input) => ({ id: 'x', hpath: input.title }) },
       prefs: new PrefsStore(dir),
+      targetIo: {
+        listNotebooks: async () => [{ id: 'nb-1', name: '工作' }],
+        getIdsByHPath: async () => [],
+      },
     });
 
     const first = await service.open({ messageId: 'm1', sessionId: 's1' });

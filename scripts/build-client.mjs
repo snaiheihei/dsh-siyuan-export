@@ -38,6 +38,7 @@ const result = await build({
   target: 'es2022',
   jsx: 'automatic',
   external: PLATFORM_MODULES,
+  loader: { '.svg': 'dataurl' },
   sourcemap: false,
   logLevel: 'info',
 });

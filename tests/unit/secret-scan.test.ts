@@ -37,7 +37,7 @@ describe('秘密扫描（T040）', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('Prefs 持久化内容只含 version/lastPath/draft（无 token/endpoint）', async () => {
+  it('Prefs 持久化内容只含 v2 偏好键（无 token/endpoint）', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'secret-scan-'));
     try {
       const store = new PrefsStore(dir);
@@ -53,8 +53,14 @@ describe('秘密扫描（T040）', () => {
       expect(raw).not.toMatch(/token/i);
       expect(raw).not.toMatch(/endpoint/i);
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      // Prefs schema 固定三键：version/lastPath/draft —— 不含任何凭据字段
-      expect(Object.keys(parsed).sort()).toEqual(['draft', 'lastPath', 'version']);
+      // Prefs v2 固定五键：version/lastPath/defaultPath/showDialog/draft —— 不含任何凭据字段
+      expect(Object.keys(parsed).sort()).toEqual([
+        'defaultPath',
+        'draft',
+        'lastPath',
+        'showDialog',
+        'version',
+      ]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -70,6 +76,10 @@ describe('秘密扫描（T040）', () => {
       gateway: createHostLlmGateway(fake.llm),
       writer: { write: async (input) => ({ id: 'x', hpath: input.title }) },
       prefs: new PrefsStore(join(tmpdir(), `secret-rpc-${Date.now()}`)),
+      targetIo: {
+        listNotebooks: async () => [{ id: 'nb-1', name: '工作' }],
+        getIdsByHPath: async () => [],
+      },
     });
     const opened = await service.open({ messageId: 'm', sessionId: 's' });
     const state = await service.state(opened.taskId);

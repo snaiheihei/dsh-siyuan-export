@@ -1,8 +1,8 @@
 /**
- * T014 · RPC 路由骨架（同源 prefix 路由，不修改 dsh Remote allowlist）
+ * T014/T051 · RPC 路由骨架（同源 prefix 路由，不修改 dsh Remote allowlist）
  *
  * 纪律（contracts/rpc.md + develop-dsh-plugin §6）：
- *  - 方法白名单（仅 5 个）、POST JSON、nonce 自定义头、body ≤ 1MB、逐字段校验
+ *  - 方法白名单（7 个）、POST JSON、nonce 自定义头、body ≤ 1MB、逐字段校验
  *    （可选参数 `!== undefined`：空字符串按「已提供」处理，不回退）
  *  - 统一信封 `{ok:true,data} | {ok:false,error}`；业务错误（PluginError）与传输错误分开；
  *    响应不含堆栈、内部路径或正文秘密
@@ -24,6 +24,10 @@ import {
   type ExportOpenRequest,
   type ExportStateData,
   type ExportStateRequest,
+  type PrefsGetData,
+  type PrefsGetRequest,
+  type PrefsUpdateData,
+  type PrefsUpdateRequest,
   type RpcMethod,
   type RpcResult,
   type TreeListData,
@@ -37,6 +41,8 @@ export interface RpcHandlers {
   commit(request: ExportCommitRequest): Promise<ExportCommitData>;
   cancel(request: ExportCancelRequest): Promise<ExportCancelData>;
   treeList(request: TreeListRequest): Promise<TreeListData>;
+  prefsGet(request: PrefsGetRequest): Promise<PrefsGetData>;
+  prefsUpdate(request: PrefsUpdateRequest): Promise<PrefsUpdateData>;
 }
 
 export interface DispatchResult {
@@ -50,6 +56,8 @@ const RPC_METHODS: readonly RpcMethod[] = [
   'export.commit',
   'export.cancel',
   'tree.list',
+  'prefs.get',
+  'prefs.update',
 ];
 
 function failure(category: ErrorInfo['category'], message: string, retryable: boolean): ErrorInfo {
@@ -77,6 +85,9 @@ function validateOpen(body: unknown): string | null {
   for (const field of ['messageId', 'sessionId'] as const) {
     if (!isNonEmptyString(body[field])) return field;
   }
+  if (body.intent !== undefined && body.intent !== 'auto' && body.intent !== 'silent') {
+    return 'intent';
+  }
   return null;
 }
 
@@ -86,13 +97,13 @@ function validateTaskId(body: unknown): string | null {
   return null;
 }
 
-function validateStoragePath(value: unknown): string | null {
-  if (!isRecord(value)) return 'target';
-  if (!isNonEmptyString(value.notebookId)) return 'target.notebookId';
-  if (typeof value.notebookName !== 'string') return 'target.notebookName';
-  if (typeof value.display !== 'string') return 'target.display';
+function validateStoragePath(value: unknown, field = 'target'): string | null {
+  if (!isRecord(value)) return field;
+  if (!isNonEmptyString(value.notebookId)) return `${field}.notebookId`;
+  if (typeof value.notebookName !== 'string') return `${field}.notebookName`;
+  if (typeof value.display !== 'string') return `${field}.display`;
   if (!Array.isArray(value.parentSegments) || !value.parentSegments.every((s) => typeof s === 'string')) {
-    return 'target.parentSegments';
+    return `${field}.parentSegments`;
   }
   return null;
 }
@@ -113,6 +124,20 @@ function validateTreeList(body: unknown): string | null {
   return null;
 }
 
+function validatePrefsGet(body: unknown): string | null {
+  if (!isRecord(body)) return 'body 必须是对象';
+  return null;
+}
+
+function validatePrefsUpdate(body: unknown): string | null {
+  if (!isRecord(body)) return 'body 必须是对象';
+  if (body.showDialog !== undefined && typeof body.showDialog !== 'boolean') return 'showDialog';
+  if (body.defaultPath !== undefined && body.defaultPath !== null) {
+    return validateStoragePath(body.defaultPath, 'defaultPath');
+  }
+  return null;
+}
+
 function validate(method: RpcMethod, body: unknown): string | null {
   switch (method) {
     case 'export.open':
@@ -124,6 +149,10 @@ function validate(method: RpcMethod, body: unknown): string | null {
       return validateCommit(body);
     case 'tree.list':
       return validateTreeList(body);
+    case 'prefs.get':
+      return validatePrefsGet(body);
+    case 'prefs.update':
+      return validatePrefsUpdate(body);
   }
 }
 
@@ -157,6 +186,10 @@ export async function dispatchRpc(
         return envelopeOk(await deps.handlers.cancel(body as ExportCancelRequest));
       case 'tree.list':
         return envelopeOk(await deps.handlers.treeList(body as TreeListRequest));
+      case 'prefs.get':
+        return envelopeOk(await deps.handlers.prefsGet(body as PrefsGetRequest));
+      case 'prefs.update':
+        return envelopeOk(await deps.handlers.prefsUpdate(body as PrefsUpdateRequest));
     }
   } catch (err) {
     if (err instanceof PluginError) {

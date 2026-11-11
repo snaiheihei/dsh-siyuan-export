@@ -52,10 +52,15 @@ describe('导出全流程集成（T019）', () => {
       gateway: createHostLlmGateway(llm),
       writer: { write: (input) => createNote({ client, ...input }) },
       prefs,
+      targetIo: {
+        listNotebooks: async () => [{ id: TARGET.notebookId, name: TARGET.notebookName }],
+        getIdsByHPath: async () => ['doc-parent'],
+      },
     });
 
     // open → generating → ready
     const opened = await service.open({ messageId: 'm1', sessionId: 's1' });
+    if (opened.mode !== 'dialog') throw new Error('默认偏好应走弹窗模式');
     expect(opened.status).toBe('generating');
     await vi.waitFor(async () => {
       expect((await service.state(opened.taskId)).status).toBe('ready');

@@ -45,10 +45,12 @@ function fakeFetch(responses: RpcResult<unknown>[]): { fetchImpl: typeof fetch; 
 }
 
 const OPEN_DATA: ExportOpenData = {
+  mode: 'dialog',
   taskId: 't1',
   status: 'generating',
   title: null,
   lastPath: null,
+  defaultPath: null,
   error: null,
 };
 

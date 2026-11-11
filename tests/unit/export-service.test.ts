@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { StoragePath } from '../../src/contract';
+import type { ExportDialogOpenData, StoragePath } from '../../src/contract';
 import { createHostLlmGateway, type LlmGateway } from '../../src/export/llm';
 import { ExportService, type ExportServiceDeps } from '../../src/export/export-service';
 import { SiyuanError } from '../../src/siyuan/client';
@@ -39,6 +39,16 @@ function deferred<T>(): {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+/** 本文件默认偏好 showDialog=true，open 应走弹窗分支 */
+async function openDialog(
+  service: ExportService,
+  request: { messageId: string; sessionId: string },
+): Promise<ExportDialogOpenData> {
+  const data = await service.open(request);
+  if (data.mode !== 'dialog') throw new Error('应为弹窗模式');
+  return data;
 }
 
 interface WriterCall {
@@ -114,6 +124,10 @@ async function makeHarness(
     gateway,
     writer,
     prefs,
+    targetIo: {
+      listNotebooks: async () => [{ id: 'nb-default', name: '默认笔记本' }],
+      getIdsByHPath: async () => ['doc-parent'],
+    },
   });
 
   const harness: Harness = {
@@ -135,7 +149,7 @@ describe('ExportService 状态机（T016）', () => {
       gateway: { generate: () => gate.promise },
       seedLastPath: TARGET,
     });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     expect(opened.status).toBe('generating');
     expect(opened.title).toBeNull();
     expect(opened.lastPath).toEqual(TARGET);
@@ -155,8 +169,8 @@ describe('ExportService 状态机（T016）', () => {
 
   it('同键重复 open 幂等：只调一次 LLM', async () => {
     const h = await makeHarness({});
-    const first = await h.service.open({ messageId: 'm1', sessionId: 's1' });
-    const second = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const first = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
+    const second = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     expect(second.taskId).toBe(first.taskId);
     await vi.waitFor(async () => {
       expect((await h.service.state(first.taskId)).status).toBe('ready');
@@ -167,7 +181,7 @@ describe('ExportService 状态机（T016）', () => {
 
   it('空源 → empty-source 拒绝，不建任务、不调 LLM', async () => {
     const h = await makeHarness({ content: '   \n  ' });
-    await expect(h.service.open({ messageId: 'm1', sessionId: 's1' })).rejects.toMatchObject({
+    await expect(openDialog(h.service, { messageId: 'm1', sessionId: 's1' })).rejects.toMatchObject({
       category: 'empty-source',
     });
     expect(h.gatewayCalls).toBe(0);
@@ -177,7 +191,7 @@ describe('ExportService 状态机（T016）', () => {
   it('LLM 超时 → degraded-ready（首行标题），error 保留类别', async () => {
     const fake = startFakeLlm({ mode: 'timeout' });
     const h = await makeHarness({ gateway: createHostLlmGateway(fake.llm) });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('degraded-ready');
     });
@@ -189,7 +203,7 @@ describe('ExportService 状态机（T016）', () => {
   it('LLM 输出结构不合 → degraded-ready（category=llm-structure）', async () => {
     const fake = startFakeLlm({ mode: 'structure-bad' });
     const h = await makeHarness({ gateway: createHostLlmGateway(fake.llm) });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('degraded-ready');
     });
@@ -198,7 +212,7 @@ describe('ExportService 状态机（T016）', () => {
 
   it('ready → commit → succeeded：写入格式化笔记、回写 lastPath、返回 href', async () => {
     const h = await makeHarness({});
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('ready');
     });
@@ -216,7 +230,7 @@ describe('ExportService 状态机（T016）', () => {
 
   it('writing 中重复 commit → 幂等拒绝（retryable=false），只写一次', async () => {
     const h = await makeHarness({ writerGate: true });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('ready');
     });
@@ -235,7 +249,7 @@ describe('ExportService 状态机（T016）', () => {
 
   it('写失败 → failed 保留字段；重试复用缓存 body（不再调 LLM）', async () => {
     const h = await makeHarness({ writerFailTimes: 1 });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('ready');
     });
@@ -257,7 +271,7 @@ describe('ExportService 状态机（T016）', () => {
   it('generating 中 cancel → cancelled，晚到的 LLM 结果不覆盖状态', async () => {
     const gate = deferred<string>();
     const h = await makeHarness({ gateway: { generate: () => gate.promise } });
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     const cancelled = await h.service.cancel(opened.taskId);
     expect(cancelled.status).toBe('cancelled');
     expect((await h.service.state(opened.taskId)).status).toBe('cancelled');
@@ -278,7 +292,7 @@ describe('ExportService 状态机（T016）', () => {
 
   it('title 清洗：非法字符移除、空串与超长拒绝（commit 前校验，不产生写入）', async () => {
     const h = await makeHarness({});
-    const opened = await h.service.open({ messageId: 'm1', sessionId: 's1' });
+    const opened = await openDialog(h.service, { messageId: 'm1', sessionId: 's1' });
     await vi.waitFor(async () => {
       expect((await h.service.state(opened.taskId)).status).toBe('ready');
     });

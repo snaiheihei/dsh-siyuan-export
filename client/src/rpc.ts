@@ -11,9 +11,14 @@ export type {
   ErrorCategory,
   ErrorInfo,
   StoragePath,
+  TargetFrom,
   TaskStatus,
+  ExportMode,
+  ExportIntent,
   ExportOpenRequest,
   ExportOpenData,
+  ExportDialogOpenData,
+  ExportSilentOpenData,
   ExportStateRequest,
   ExportStateData,
   ExportCommitRequest,
@@ -23,6 +28,11 @@ export type {
   TreeListRequest,
   TreeNode,
   TreeListData,
+  PrefsView,
+  PrefsGetRequest,
+  PrefsGetData,
+  PrefsUpdateRequest,
+  PrefsUpdateData,
   RpcMethod,
   RpcContractMap,
   RpcResult,
@@ -39,6 +49,9 @@ import {
   type ExportOpenData,
   type ExportOpenRequest,
   type ExportStateData,
+  type PrefsUpdateData,
+  type PrefsUpdateRequest,
+  type PrefsView,
   type RpcResult,
   type StoragePath,
   type TreeListData,
@@ -83,6 +96,8 @@ export interface ExportClient {
   commit(request: { taskId: string; title: string; target: StoragePath }): Promise<ExportCommitData>;
   cancel(taskId: string): Promise<ExportCancelData>;
   treeList(request: TreeListRequest): Promise<TreeListData>;
+  prefsGet(): Promise<PrefsView>;
+  prefsUpdate(request: PrefsUpdateRequest): Promise<PrefsUpdateData>;
   pollUntilSettled(taskId: string, options?: PollOptions): Promise<ExportStateData>;
 }
 
@@ -124,6 +139,8 @@ export function createExportClient(options: ExportClientOptions = {}): ExportCli
     commit: (request) => call<ExportCommitData>('export.commit', request),
     cancel: (taskId) => call<ExportCancelData>('export.cancel', { taskId }),
     treeList: (request) => call<TreeListData>('tree.list', request),
+    prefsGet: () => call<PrefsView>('prefs.get', {}),
+    prefsUpdate: (request) => call<PrefsUpdateData>('prefs.update', request),
 
     async pollUntilSettled(taskId: string, pollOptions: PollOptions = {}): Promise<ExportStateData> {
       const isCurrent = pollOptions.isCurrent ?? (() => true);
@@ -134,7 +151,15 @@ export function createExportClient(options: ExportClientOptions = {}): ExportCli
         const state = await call<ExportStateData>('export.state', { taskId });
         if (!isCurrent(taskId)) {
           // stale：忽略该响应（返回未就绪的占位，不覆盖上层状态）
-          return { status: 'generating', title: null, error: null };
+          return {
+            mode: 'dialog',
+            status: 'generating',
+            title: null,
+            target: null,
+            href: null,
+            degraded: false,
+            error: null,
+          };
         }
         if (isSettled(state.status)) return state;
       }
