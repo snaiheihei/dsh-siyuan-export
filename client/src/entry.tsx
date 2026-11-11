@@ -319,7 +319,7 @@ export function apply(ctx: Context): void {
         name: SETTINGS_SLOT_KEY,
         id: SETTINGS_PANEL_ID,
         order: 50,
-        label: () => t('settings.panel'),
+        label: () => t('sidebar.label'),
         locale: NS,
       },
       BijiIcon,

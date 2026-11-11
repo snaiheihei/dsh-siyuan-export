@@ -88,8 +88,20 @@ describe('SettingsPanel（T053）', () => {
     await waitFor(() => expect(fake.prefsGet).toHaveBeenCalledTimes(1));
     expect(switchEl().getAttribute('aria-checked')).toBe('true');
     expect(await screen.findByText('未选择')).toBeTruthy();
+    // 摘要条先回答“导出会怎样”：弹窗确认、默认落点、上次成功落点
+    expect(screen.getByText('导出方式')).toBeTruthy();
+    expect(screen.getByText('弹窗确认')).toBeTruthy();
+    expect(screen.getByText('上次成功落点')).toBeTruthy();
+    expect(screen.getByText('—')).toBeTruthy();
     // 路径只能从思源树选择：面板内没有自由文本输入框
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  it('静默模式：摘要条显示静默导出与上次落点（T053/T061）', async () => {
+    setup({ showDialog: false, defaultPath: null, lastPath: PATH });
+    expect(await screen.findByText('静默导出')).toBeTruthy();
+    expect(screen.getByText('上次成功落点')).toBeTruthy();
+    expect(screen.getByText('工作 / 项目A')).toBeTruthy();
   });
 
   it('修改开关即保存（无全局保存按钮），保存中禁用，成功后落到已保存值', async () => {

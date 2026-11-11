@@ -274,13 +274,18 @@ describe('Change 静默链路隔离 E2E（V9–V11）', () => {
     });
 
     // 无半成品持久化：数据目录只有 prefs.json（真实关窗/重启为手工证据）
-    expect((await readdir(h.dir)).sort()).toEqual(['prefs.json']);
+    // 成功状态先于 lastPath 回写可见，读写目录需等原子写完成（临时文件随即 rename）
+    await vi.waitFor(async () => {
+      expect((await readdir(h.dir)).sort()).toEqual(['prefs.json']);
+    });
     expect(h.siyuan.docs).toHaveLength(1);
 
     // 同一数据目录新建 PrefsStore 读出偏好：任务状态未持久化，重启后没有可续写的半成品
     const restarted = new PrefsStore(h.dir);
     const state = await restarted.read();
     expect(state.showDialog).toBe(false);
-    expect((await readdir(h.dir)).sort()).toEqual(['prefs.json']);
+    await vi.waitFor(async () => {
+      expect((await readdir(h.dir)).sort()).toEqual(['prefs.json']);
+    });
   });
 });

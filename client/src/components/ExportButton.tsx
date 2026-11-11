@@ -14,13 +14,16 @@ export type ExportButtonProps = {
 
 export function ExportButton(props: ExportButtonProps): JSX.Element {
   const { messageId, loading = false, onExport, t } = props;
+  const label = loading ? t('button.exporting') : t('button.export');
   return (
     <button
       type="button"
       data-siyuan-export="button"
       data-role="export-button"
-      aria-label={t('button.export')}
-      title={t('button.export')}
+      data-state={loading ? 'exporting' : 'idle'}
+      aria-label={label}
+      aria-busy={loading}
+      title={label}
       disabled={loading}
       onClick={() => {
         if (loading) return;
@@ -37,34 +40,66 @@ export function ExportButton(props: ExportButtonProps): JSX.Element {
         cursor: loading ? 'default' : 'pointer',
         fontSize: '12px',
         lineHeight: '18px',
-        opacity: loading ? 0.6 : 1,
+        opacity: loading ? 0.85 : 1,
         padding: '2px 6px',
       }}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 16 16"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path
-          d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-        <path
-          d="M8 10V2.5M5 5.5L8 2.5l3 3"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </svg>
+      {loading ? (
+        // SMIL 旋转：不依赖宿主是否注入 keyframes，降级时仍是一个清晰的进度弧
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          focusable="false"
+          data-role="export-spinner"
+        >
+          <circle
+            cx="8"
+            cy="8"
+            r="5.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            fill="none"
+            strokeDasharray="24 11"
+            opacity="0.9"
+          >
+            <animateTransform
+              attributeName="transform"
+              type="rotate"
+              values="0 8 8;360 8 8"
+              dur="0.9s"
+              repeatCount="indefinite"
+            />
+          </circle>
+        </svg>
+      ) : (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+          <path
+            d="M8 10V2.5M5 5.5L8 2.5l3 3"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </svg>
+      )}
     </button>
   );
 }

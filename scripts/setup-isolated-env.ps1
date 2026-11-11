@@ -6,7 +6,11 @@
 #>
 param(
     [string]$BaseDir = (Join-Path $env:TEMP 'dsh-siyuan-export-test'),
-    [string]$DshRepo = 'C:\Users\503247565\OneDrive - GE HealthCare\Desktop\program\github\deepseek-harness'
+    # 不内置个人路径：优先 DSH_DSH_REPO 环境变量，其次同层目录 ../github/deepseek-harness
+    [string]$DshRepo = $(
+        if ($env:DSH_DSH_REPO) { $env:DSH_DSH_REPO }
+        else { [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\github\deepseek-harness')) }
+    )
 )
 
 $ErrorActionPreference = 'Stop'

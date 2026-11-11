@@ -76,6 +76,16 @@ describe('ExportButton（T023）', () => {
     click();
     expect(onExport).not.toHaveBeenCalled();
   });
+
+  it('loading 时显示进度弧、切换为导出中文案并标记 aria-busy', () => {
+    const { element } = renderButton({ loading: true });
+    expect(element.props['aria-label']).toBe('导出中…');
+    expect(element.props['aria-busy']).toBe(true);
+    expect(element.props['data-state']).toBe('exporting');
+    const icon = element.props.children as { type: string; props: Record<string, unknown> };
+    expect(icon.type).toBe('svg');
+    expect(icon.props['data-role']).toBe('export-spinner');
+  });
 });
 
 afterEach(cleanup);
@@ -199,7 +209,7 @@ function actionProps(overrides: Record<string, unknown> = {}) {
   } as unknown as React.ComponentProps<typeof SiyuanExportAction>;
 }
 
-const buttonName = '导出到思源';
+const buttonName = /导出到思源|导出中/;
 
 async function button(): Promise<HTMLButtonElement> {
   return (await screen.findByRole('button', { name: buttonName })) as HTMLButtonElement;
@@ -288,6 +298,9 @@ describe('SiyuanExportAction 模式分派（T061）', () => {
     fireEvent.click(el);
 
     await waitFor(() => expect(el.disabled).toBe(true));
+    expect(el.getAttribute('data-state')).toBe('exporting');
+    expect(el.getAttribute('aria-busy')).toBe('true');
+    expect(el.querySelector('[data-role="export-spinner"]')).not.toBeNull();
     expect(document.querySelector('[data-role="export-dialog-overlay"]')).toBeNull();
 
     fireEvent.click(el);
@@ -308,6 +321,8 @@ describe('SiyuanExportAction 模式分派（T061）', () => {
 
     harness.settle({ status: 'succeeded' });
     await waitFor(() => expect(el.disabled).toBe(false));
+    expect(el.getAttribute('data-state')).toBe('idle');
+    expect(el.querySelector('[data-role="export-spinner"]')).toBeNull();
   });
 
   it('卸载后重新挂载由单例恢复运行态', async () => {
