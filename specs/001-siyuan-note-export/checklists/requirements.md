@@ -2,7 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-11-09
-**Feature**: [spec.md](spec.md)
+**Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 
@@ -35,3 +35,4 @@
 - 术语新概念已登记至根目录 `GLOSSARY.md`，数据形状登记于 spec.md 的 `### Key Entities`。
 - 本特性仓无 `.specify/extensions.yml` 的 `after_specify` 钩子，规格通过后无需执行后续钩子。
 - 校验结果：全部通过，可进入 `/speckit-clarify`（可选）或 `/speckit-plan`。
+- 2026-11-11 Change（侧栏设置 + 静默导出）：新增 US4/US5、FR-014–FR-025、SC-007–SC-011，并修改 FR-002/FR-006；写前三条关键假设已确认，全部校验项通过。

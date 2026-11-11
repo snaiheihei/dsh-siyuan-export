@@ -29,5 +29,11 @@
 2. **同名消歧（FR-007 硬保证）**：commit 前先 `getIDsByHPath(notebook, hpath + "/" + title)` 查重；命中 → 追加 ` (2)`、` (3)`… 后缀重试，**保证「不覆盖、独立文档」**。原因：同 path 重复创建的真实行为（复用 ID vs 新建同名）文档未说明（R3 待实测），不能依赖其默认行为。
 3. **错误分类**：连接失败/非 2xx → `siyuan-connect`；`code != 0`：认证类 → `siyuan-auth`，路径类（`pathAmbiguous`、路径失效）→ `siyuan-path`，**瞬时索引未就绪（`indexUnavailable` / `document metadata is not ready`，真实实测）→ `siyuan-connect` 可重试**，其余 → `siyuan-connect`（retryable）。RPC 层输出的 `message` 为用户可读中文，**不含堆栈、内部路径、正文秘密**。
 4. **写后不立即 SQL 读**：如需回读验证，先 `POST /api/sqlite/flushTransaction` 等 `code:0`（quickstart 的落点核验以思源 UI 打开为准，不走此路径）。
-5. **路径拼接**：`StoragePath.parentSegments`（选中文档的 `hpath` 分段）+ 消歧后的 title → `createDocWithMd.path`；父级缺失自动创建（文档原文），但选中路径失效仍映射 `siyuan-path` 引导重选。
+5. **路径拼接**：`StoragePath.parentSegments`（选中文档的 `hpath` 分段）+ 消歧后的 title → `createDocWithMd.path`；`createDocWithMd` 的「父级缺失自动创建」只作接口既有语义，不作为落点失效的兜底——设置默认路径与静默导出按规则 7 先校验，选中路径失效仍映射 `siyuan-path` 引导重选。
 6. **超时与中止**：适配器请求带 `AbortSignal`（与导出任务的 cancel 同源）与有限超时；重试仅对 retryable 分类、限次退避。
+7. **目标校验（Change：设置默认路径 / 静默落点）**：写入前与 `prefs.update` 保存前都调用 `validateTarget(path)`——
+   - `notebookId` 必须存在于 `lsNotebooks` 且未关闭；否则 `siyuan-path`。
+   - `parentSegments` 非空时用 `getIDsByHPath(notebook, hpath)` 校验父级存在；不存在 → `siyuan-path`，**不自动创建父级链**（设置页要求选中真实节点）。
+   - 校验失败**不写入**；静默模式直接 `failed`，**不回退到其他落点**（FR-023）。
+   - 静默落点第三优先级取 `lsNotebooks` 第一本未关闭笔记本的根（`parentSegments=[]`）；无任何笔记本 → `siyuan-path`。
+8. **静默写入**：与弹窗共用 `createDocWithMd` + 查重消歧；写入前 `getIDsByHPath` 失败（如索引未就绪 `indexUnavailable`）按规则 3 映射 `siyuan-connect` 可重试，**不得**在未查重时直接创建（FR-007）。

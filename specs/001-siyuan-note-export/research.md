@@ -108,3 +108,83 @@
 | 消息操作栏 slot 在真实 Host 的渲染与 props | quickstart V2（真实 UI + slot 注册证据） | quickstart |
 | 隔离安装链路（patch → dump-config → 启动 → UI） | develop-dsh-plugin 工作流 + quickstart V1 | quickstart |
 | FR-013 输入裁剪 | 单元测试负向断言（prompt 不含上下文） | tests/unit |
+| 侧栏入口/设置主面板在真实 Host 的渲染与图标尺寸 | quickstart V8（真实 UI + slot 注册证据） | quickstart |
+| 静默导出跨会话/面板切换仍完成并提示 | quickstart V11（隔离 Host 真实操作） | quickstart |
+| 偏好 v1→v2 迁移与损坏回退 | 单元测试（Temp 目录）+ quickstart V12 | tests/unit |
+| 3 条不同回复并发静默导出各 1 篇 | 集成测试（fake writer）+ quickstart V11 | tests/integration |
+
+---
+
+## R6 · 侧栏入口与主面板（宿主扩展点实证）
+
+**Decision**：使用官方 **`sidebar.panellist`**（list/root）注册设置入口，组件本身即图标（owner props `{ size, active }`）；`label` 元数据提供按钮可访问名称。主页面注册到 **`main`**（keyed/root），`key` 必须与 panellist 的 `id` 相同。点击侧栏由宿主调用 `ctx.layout.selectPanel(id)`，插件不需要自行绑定点击。全局提示使用 **`shell.overlay`**（list/root）。
+
+**Rationale**（源码确认，dsh `0.2.2-rc.1`）：
+- slot 声明：`packages/client/ui-sidebar/src/client/contract/slots.ts:36`；图标 owner props `{ size, active }` 在同文件 `:73-78`。
+- 可访问名称：sidebar 从注册元数据解析 `resolveSlotLabel(options.label) ?? id`（`packages/client/ui-sidebar/src/client/index.ts:54`），按钮标签与图标解耦 → 图标加载失败不影响名称。
+- 点击行为：`injectProps.selectPanel(id) → ctx.layout.selectPanel(id)`（`ui-sidebar/src/client/index.ts:76`）。
+- 主面板：`main` 为 keyed slot（`packages/client/ui-layout/src/client/index.ts:75`），按 `entryKey` 渲染（`AppFrame.tsx:49`）；宿主先例 `ui-plugin-manager/src/client/index.ts:133`（main）与 `:167`（panellist）、`ui-schedule/src/client/index.ts:219/240`。
+- overlay：`shell.overlay` list/root（`ui-layout/src/client/index.ts:107`），层本身 click-through（注释 `:97-106`），toast 根必须 `pointer-events:auto`；渲染于 `AppFrame.tsx:281,328`。
+
+**Alternatives considered**：
+- 复用 ui-settings 的 `settings.section` 页：D5 已拍板弃用（树选择与即时生效与 configForms 语义不合）。
+- 用 `label` 字符串充当图标：宿主只把 label 当文本/可访问名，不是图标通道 → 不可行。
+- 直接 DOM 注入侧栏：无公开扩展点、升级易碎 → 弃。
+
+---
+
+## R7 · 静默落点解析（产品歧义裁决）
+
+**Decision**：静默落点按以下顺序解析（`src/siyuan/target.ts`）：
+1. `Prefs.defaultPath`（设置中的默认存放路径）→ 校验后使用；失效则失败，**不回退**（FR-023）。
+2. 否则取 `Prefs.lastPath.notebookId` 对应笔记本的根目录（把「最近一次成功导出的笔记本」视为「当前笔记本」）。
+3. 无历史成功路径 → `lsNotebooks` 返回顺序的第一个笔记本根。
+4. 无任何笔记本 → `siyuan-path` 失败，提示先创建笔记本。
+
+**Rationale**：
+- 思源官方 API 没有「当前活动笔记本」查询（`lsNotebooks` 仅返回列表，见 R3）；必须给出确定规则，否则同一操作会产生随机落点。
+- 「最近成功导出的笔记本」最接近用户心中的「当前」；首次使用时取列表首个笔记本是唯一稳定选择。
+- 设置保存同样调用 `validateTarget`（笔记本存在 + `getIDsByHPath` 可解析父级），失败不写入偏好，满足 US4-6「保留上一次有效配置」。
+
+**Alternatives considered**：
+- 始终取第一个笔记本：忽略用户最近使用上下文，静默导出可能落到错误笔记本。
+- 多笔记本且无历史时直接失败：违背 US5-5「未配置默认路径时落到当前笔记本根」的可完成预期。
+- 读取思源 UI 的活动笔记本：无公开 API，DOM 耦合 → 不可行。
+
+**边界**：该「当前笔记本」定义是产品假设（spec 未指定多笔记本时的选择规则）；如后续要改为真实活动笔记本，需要思源提供对应 API 或用户显式设置。
+
+---
+
+## R8 · 偏好 v2 迁移与读写纪律
+
+**Decision**：`prefs.json` 升到 `version: 2`，新增 `defaultPath` 与 `showDialog`；读取时对 v1 做迁移（保留 `lastPath`/`draft`，补默认值），未知版本/损坏回退默认值（`showDialog:true`、`defaultPath:null`）。
+
+**Rationale**：
+- 现有 `isPrefsData` 对版本不等直接返回默认值（`src/store/prefs.ts:49`）→ 若只改版本号会丢掉用户上次路径；FR-022 要求「缺失/损坏回退默认值」，但 v1 是合法旧数据，不应按损坏处理。
+- 继续用单一 `PrefsStore`：原子写 + 串行队列已满足 D6；不引入第二套配置面。
+- `update()` 的 `definedPatch` 会保留 `false`/`null`（只丢弃显式 `undefined`），因此开关关闭与清除默认路径都能落盘。
+
+**Alternatives considered**：
+- 新建 `settings.json`：形成双事实源，且 lastPath/defaultPath 需要跨文件事务 → 弃。
+- 版本不匹配一律重置：最简单但丢失已验证的 lastPath → 弃。
+- 存 localStorage：Host 静默导出读不到 → 弃（见 D6）。
+
+---
+
+## R9 · 静默任务生命周期与提示（Client 侧）
+
+**Decision**：
+- 静默任务由模块级单例 `client/src/silent-export.ts` 持有：按 `messageId` 记录进行中任务、轮询 `export.state`、完成时写入全局 toast；消息行组件卸载（切会话/面板）**不取消**任务，重新挂载时从单例恢复加载态。
+- `client/src/toast-store.ts` + `ToastHost.tsx` 注册到 `shell.overlay`；成功 toast 约 6s 自动消失，失败 toast 常驻并提供重试/打开设置；栈上限 3；容器 `aria-live="polite"`，toast 根 `pointer-events:auto`。
+
+**Rationale**：
+- `conversation.chat.assistant-actions` 组件随消息行/会话卸载；若把轮询放在组件 effect 中，切换会话会中止或丢失结果，违背 FR-019「不阻塞切换会话」与 FR-025「互不阻塞」。
+- overlay 层 click-through（R6），不设 pointer-events 的 toast 无法点击「重试」。
+- 失败 toast 自动消失会让用户错过可恢复错误；成功 toast 自动消失符合「知情但不打扰」。
+
+**Alternatives considered**：
+- Host 主动推送完成事件：插件只有同源 RPC，无面向插件的 client 事件通道；轮询 500ms 已足够且与弹窗一致 → 弃。
+- 用模态弹窗展示结果：阻塞对话，违背 US5 → 弃。
+- 每条消息自建 toast 容器：重复挂载/卸载，且切会话后不可见 → 弃。
+
+**未知项（quickstart）**：真实宿主中 `shell.overlay` 的层叠上下文与 toast 位置需 UI 核验；`biji.svg` dataurl 在 handoff 中的实际渲染需构建测试 + 真实侧栏核验。
