@@ -216,6 +216,10 @@
 - Baseline: —
 - Verification: converge: converged（0 findings，77/77 任务）；verify.standards: 硬违规 0（5 轮复核，遗留均为判断项；宿主主题令牌命名差异另立 Change）
 - Verified: 2026-11-12
+- Archive Patches（2026-11-12 机制建立后补记，仅追加记录，不改变归档结论；converge 结论对应补修前代码）:
+  - AP-01 失败重试复用缓存落点，违反 data-model `failed` 行 → 重试按当前偏好重新解析，默认路径失效时保持 failed 不写入 — 验证: tests/integration/export-silent.test.ts 新增 2 项先红后绿，文件 20/20 pass（2026-11-12）
+  - AP-02 三处 await 后认领状态的并发窗口（冷启动建任务、接管弹窗任务、失败重试写入，共同根因）→ 回到同步临界区重判，writeTask 在首个 await 前同步落闩 — 验证: 3 项复现测试经还原旧实现见红、修复后转绿；全量 247 pass + 1 skipped，typecheck/lint 通过（2026-11-12）
+  - AP-03 界面颜色字面量与 references.md 本机绝对路径（质量与文档，无行为变更）→ 改为 var(--dsh-*, 回退) 包装与占位路径 — 验证: grep 无残留裸字面量与个人路径，typecheck 与双端构建通过（2026-11-12）
 
 ## Delta
 | Operation | Affected capability | Spec references |
