@@ -47,6 +47,7 @@ SingleOutput ──(静默 open)── SilentExportTask ──(自动 commit)─
 
 **规则**：
 - 模式只在 **open 时**判定一次；进行中的导出不因 `Prefs.showDialog` 变化而改道（edge case：导出中改设置只影响下一次）。
+- 同键再 open 不改变**本次请求**的通道语义：静默请求命中既有弹窗任务时响应为 `mode:'silent'`，绝不打开弹窗（FR-017）。`succeeded`/`writing` 原样返回且不改道；其余状态任务就地转静默——落点按静默规则重新解析（FR-018/FR-023），已生成则复用缓存 body 自动写入、不重调 LLM。
 - `mode='dialog'` 的响应携带 `taskId/status/title/lastPath/defaultPath`，Client 打开弹窗；`mode='silent'` 的响应携带 `taskId/status/target/targetFrom/degraded/alreadyRunning`，Client **不打开弹窗**，直接进入提示与加载态（FR-017/FR-020）。
 - 静默模式无取消入口（假设），弹窗模式的 unmount 即 cancel 不适用于静默任务。
 
@@ -79,7 +80,7 @@ SingleOutput ──(静默 open)── SilentExportTask ──(自动 commit)─
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | taskId | string | **幂等键 = sessionId + messageId + contentRevision**（FR-011/FR-025；不同会话同 messageId 不得相撞） |
-| mode | `'dialog' \| 'silent'` | open 时判定，之后不变（FR-016/FR-017） |
+| mode | `'dialog' \| 'silent'` | open 时判定；同键请求不重建任务。静默请求命中弹窗任务时任务就地转静默（`succeeded`/`writing` 除外，保持原状态与目标）（FR-016/FR-017/FR-025） |
 | state | 见下表 | 单一权威状态，Host 内存持有 |
 | phase | `llm` \| `write` | 当前阶段（用于 UI 文案「生成中…/写入中…」） |
 | title | string \| null | LLM 默认值（可被 Client 确认值覆盖）；静默模式直接用 LLM/降级标题 |
@@ -102,8 +103,11 @@ SingleOutput ──(静默 open)── SilentExportTask ──(自动 commit)─
 | `writing` | 写入失败 | `failed` | 错误分类（见下），保留 title/target（FR-010） |
 | `generating`（静默） | 落点解析失败（默认路径失效/无笔记本） | `failed` | `siyuan-path`，**不写入、不改道**（FR-023）；`target=null`，`targetFrom` 标明尝试来源 |
 | `generating` / `writing`（静默） | 同键再次 `open` | 不变 | 返回当前状态 + `alreadyRunning=true`；**不重复生成或写入**（FR-019/FR-025） |
+| `succeeded` / `writing`（弹窗） | 同键 `open`，本次判定为静默 | 不变 | 原样返回 `mode:'silent'`（+ 既有 target/href，或 `alreadyRunning=true`）；不改道、不重复落盘（FR-017/FR-025） |
+| `generating` / `ready` / `degraded-ready` / `failed` / `cancelled`（弹窗） | 同键 `open`，本次判定为静默 | `generating` / `writing`（静默） | 任务就地转静默：落点按静默规则重新解析（FR-018/FR-023）；`generating` 沿用进行中的流，`cancelled` 重新生成，已生成态复用缓存 body 写入（不重调 LLM）；不打开弹窗 |
 | `failed` | `retry`（弹窗）/ 再次 `open(intent='silent')` | `writing` | **复用缓存 body**（同 taskId 幂等，SC-006），不调 LLM；落点重新解析，仍失败则再次 `failed` |
-| `succeeded` | 同键再次 `open` | `writing`（重置） | 视为一次新导出，可复用缓存 body 直接再写一篇（同名消歧），不重复调 LLM（edge case） |
+| `succeeded` | 同键再次 `open`（本次判定为弹窗） | `writing`（重置） | 视为一次新导出，可复用缓存 body 直接再写一篇（同名消歧），不重复调 LLM（edge case） |
+| `succeeded` | 同键再次 `open`（静默任务） | 不变 | 视为已导出：不新建任务、不重调 LLM/写入（SC-006 零重复笔记；归档另一份需新 `contentRevision`） |
 | 任意终态 | dialog 关闭 | （任务表清理） | 仅弹窗任务；静默任务由 Host 生命周期回收，不因 UI unmount 取消 |
 
 **错误分类**（FR-010 文案映射，不泄漏堆栈/内部路径/正文秘密）：

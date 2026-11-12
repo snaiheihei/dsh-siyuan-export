@@ -41,8 +41,8 @@
     error: ErrorInfo | null }        // status='failed' 时给出原因与 retryable
 ```
 
-- **模式判定（Host 权威）**：`intent='silent'` → 恒静默；`intent='auto'` 读 `Prefs.showDialog`（缺省 true）。Client 不缓存/不猜测模式（FR-016/FR-017）。
-- **幂等**：同 `taskId`（= `sessionId:messageId:contentRevision`）已有任务 → 返回当前状态，**不重复调 LLM/写入**（FR-011/FR-025）；进行中时 `alreadyRunning=true`，静默响应照常返回。
+- **模式判定（Host 权威）**：本次请求的模式由 `intent`/`Prefs.showDialog` 判定——`intent='silent'` → 恒静默；`intent='auto'` 读 `Prefs.showDialog`（缺省 true）。Client 不缓存/不猜测模式（FR-016/FR-017）。同键既有任务的创建模式不改变本次请求的通道语义：静默请求命中弹窗任务时返回 `mode:'silent'`，绝不因任务创建模式打开弹窗。
+- **幂等**：同 `taskId`（= `sessionId:messageId:contentRevision`）已有任务 → 返回当前状态，**不重复调 LLM/写入**（FR-011/FR-025）；进行中时 `alreadyRunning=true`，静默响应照常返回。跨模式命中按静默语义收敛：`succeeded`/`writing` 原样返回且不改道，其余状态就地转静默、落点按静默规则重新解析，已生成则复用缓存 body 自动写入。
 - `mode='dialog'` 时 Client 立即打开弹窗，`status='generating'` 以轮询等待（见下）；`title` 非 null 即自动填入（未被用户编辑时）。
 - `mode='silent'` 时 Client **不得打开弹窗**；以返回的 `taskId/status` 驱动按钮加载态与提示（FR-019/FR-020）。
 - 已是 `succeeded|failed` 的终态也可能直接返回（重试/重复点击的幂等命中）。
@@ -64,6 +64,7 @@
 ```
 
 - **不返回 body**（正文仅 Host 持有，data-model 不变量）。
+- `mode` 是任务当前通道：一般等于创建模式；静默请求接管弹窗任务后为 `silent`，但 `succeeded`/`writing` 的接管保留原 `dialog`（不改道）。Client 只按本次 `open` 响应的 `mode` 决定是否打开弹窗，不据 `state.mode` 改道。
 - 未知/已回收 `taskId` → `ok:false` + `internal`（retryable false），Client 按终态清除加载态，不重试。
 
 ### 3. `export.commit`

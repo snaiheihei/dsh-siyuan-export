@@ -70,7 +70,10 @@ export interface ExportServiceDeps {
 
 interface TaskState {
   taskId: string;
-  /** 任务模式在创建时固定；后续 open 返回原模式（同键不重复落盘） */
+  /**
+   * 任务当前通道：创建时按 open 判定；静默请求命中可接管弹窗任务，
+   * 但 succeeded/writing 保留原模式与目标（不重写已确定的落盘）。
+   */
   mode: ExportMode;
   messageId: string;
   sessionId: string;
@@ -176,7 +179,8 @@ export class ExportService {
     return this.openDialog(request);
   }
 
-  private async openDialog(request: ExportOpenRequest): Promise<ExportDialogOpenData> {
+  /** 弹窗分支；同键已有静默任务时沿用静默响应（模式在任务创建时固定） */
+  private async openDialog(request: ExportOpenRequest): Promise<ExportOpenData> {
     const output = await this.deps.source.readOutput({
       messageId: request.messageId,
       sessionId: request.sessionId,
@@ -191,6 +195,7 @@ export class ExportService {
     const prefs = await this.readPrefs();
     const existing = this.tasks.get(key);
     if (existing) {
+      if (existing.mode === 'silent') return this.respondExistingSilent(existing);
       // 终态处理（spec edge「同一条回复连续导出到不同路径 → 各自独立成文」）：
       // - succeeded → 重置 ready（复用缓存 body，允许再次导出，不重调 LLM 省 token）
       // - cancelled → 重新生成（清空缓存，重新走 LLM）
@@ -264,24 +269,9 @@ export class ExportService {
     const key = ExportService.taskKey(request.sessionId, request.messageId, revision);
     const existing = this.tasks.get(key);
     if (existing) {
-      // 同键任务模式在创建时固定：已存在的弹窗任务按弹窗响应返回，不重复建流水线
-      if (existing.mode === 'dialog') {
-        return this.toDialogData(existing, await this.readPrefs());
-      }
-      // 写失败重试：复用缓存 body 与已解析落点，不重调 LLM、不改道（FR-020）
-      if (existing.status === 'failed' && existing.body && existing.target) {
-        existing.status = 'writing';
-        existing.writing = true;
-        existing.error = null;
-        void this.writeTask(
-          existing,
-          existing.title ?? fallbackTitle(existing.rawContent),
-          existing.target,
-        ).catch(() => undefined);
-        return { ...this.toSilentData(existing), alreadyRunning: true };
-      }
-      const alreadyRunning = existing.status === 'generating' || existing.status === 'writing';
-      return { ...this.toSilentData(existing), alreadyRunning };
+      // 同键任务模式在创建时固定：静默请求对既有弹窗任务返回静默语义，绝不打开弹窗
+      if (existing.mode === 'dialog') return this.adoptDialogForSilent(request, existing);
+      return this.respondExistingSilent(existing);
     }
 
     const prefs = await this.readPrefs();
@@ -316,6 +306,67 @@ export class ExportService {
     void this.generate(task, abort.signal);
 
     return { ...this.toSilentData(task), alreadyRunning: false };
+  }
+
+  /**
+   * 同键既有弹窗任务转静默（模式在创建时固定，但静默请求必须得到静默语义）：
+   * 已落盘/写入中的任务不改道、不重复落盘；其余接管为静默任务，
+   * 落点按静默规则解析（FR-018/FR-023），已生成则复用缓存 body 直接写入（不重调 LLM）。
+   */
+  private async adoptDialogForSilent(
+    request: ExportOpenRequest,
+    existing: TaskState,
+  ): Promise<ExportSilentOpenData> {
+    if (existing.status === 'succeeded' || existing.writing) {
+      return { ...this.toSilentData(existing), alreadyRunning: existing.writing };
+    }
+
+    let resolved: { target: StoragePath; targetFrom: TargetFrom };
+    try {
+      resolved = await resolveSilentTarget(await this.readPrefs(), this.deps.targetIo);
+    } catch (err) {
+      // 落点解析失败：静默失败、不写入、不改道（FR-023）
+      return this.silentFailure(request, toErrorInfo(err));
+    }
+
+    existing.mode = 'silent';
+    existing.target = resolved.target;
+    existing.targetFrom = resolved.targetFrom;
+    existing.error = null;
+
+    if (existing.body) {
+      // ready / degraded-ready / 写失败的弹窗任务：复用缓存 body 自动写入
+      existing.status = existing.degraded ? 'degraded-ready' : 'ready';
+      void this.autoWrite(existing);
+    } else if (existing.status !== 'generating') {
+      // 已取消等无缓存态：重新生成，生成完按静默通道自动写入
+      existing.status = 'generating';
+      existing.title = null;
+      const abort = new AbortController();
+      existing.abort = abort;
+      void this.generate(existing, abort.signal);
+    }
+
+    const alreadyRunning = existing.status === 'generating' || existing.writing;
+    return { ...this.toSilentData(existing), alreadyRunning };
+  }
+
+  /** 同键既有静默任务的响应：失败复用缓存重试，其余原样返回（FR-020 / FR-025） */
+  private respondExistingSilent(existing: TaskState): ExportSilentOpenData {
+    // 写失败重试：复用缓存 body 与已解析落点，不重调 LLM、不改道（FR-020）
+    if (existing.status === 'failed' && existing.body && existing.target) {
+      existing.status = 'writing';
+      existing.writing = true;
+      existing.error = null;
+      void this.writeTask(
+        existing,
+        existing.title ?? fallbackTitle(existing.rawContent),
+        existing.target,
+      ).catch(() => undefined);
+      return { ...this.toSilentData(existing), alreadyRunning: true };
+    }
+    const alreadyRunning = existing.status === 'generating' || existing.status === 'writing';
+    return { ...this.toSilentData(existing), alreadyRunning };
   }
 
   /** 未建任务的静默失败：taskId 用稳定占位，客户端据 status:'failed' 直接出 toast */

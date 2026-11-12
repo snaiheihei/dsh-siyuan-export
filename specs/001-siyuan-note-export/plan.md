@@ -140,7 +140,7 @@ tests/
   - `{ mode: 'dialog', taskId, status, title, lastPath, defaultPath, error }`（原字段 + 默认路径回退）；
   - `{ mode: 'silent', taskId, status, target, targetFrom, error, degraded, alreadyRunning }`。
 - 静默分支的**业务失败也以 `mode:'silent'` 数据返回**（如落点解析失败、空回复），保证 Client 无需先读偏好即可决定「不弹窗」；传输失败仍由 Client 统一转 toast。
-- 弹窗分支完全保留现有行为与类型语义，减少回归面。
+- 弹窗分支保留既有响应类型语义；跨模式同键命中时按**静默语义**收敛：静默请求命中既有弹窗任务时不打开弹窗，`succeeded`/`writing` 原样返回静默数据且不改道，其余状态就地转静默（落点按静默规则解析、已生成则复用缓存 body 自动写入）。
 
 ### 2. 静默落点解析（FR-018 / FR-023）
 
@@ -189,7 +189,8 @@ interface PrefsData {
 - 幂等键仍为 `sessionId:messageId:contentRevision`：
   - 同键 `generating/writing` → 返回 `alreadyRunning:true`，不启动第二条流水线；
   - 同键 `ready/degraded-ready/failed` → 复用缓存 body 直接重试写入（不重调 LLM）；
-  - 同键 `succeeded` → 重置为 `ready` 再写一篇（用户再次点击 = 新的一次导出）。
+  - 同键 `succeeded` → 视为已导出：再次点击返回当前状态，不新建任务、不重调 LLM/写入（与 contracts/rpc.md「已有任务不重复写入」及 SC-006「0 例重复笔记」一致）。静默任务的 `mode` 在创建时固定：同一回复如需再次归档，由新的输出（新 `contentRevision`）发起。
+  - 跨模式同键（静默意图命中既有弹窗任务，见 §1）：`succeeded`/`writing` 不改道、不重复落盘；其余状态就地转静默，`generating` 沿用进行中的 LLM 流，`cancelled` 重新生成，已生成态复用缓存 body 写入静默落点（不重调 LLM）；全程不打开弹窗。
 - 不同 messageId 的任务互不等待；同一任务的写入由 `writing` 门闩保护。写入成功仍回写 `lastPath`，不改 `defaultPath`。
 - 生成失败沿用现有降级（标题取首行、正文原文）并继续写入；状态携带 `degraded:true` 供 toast 说明。
 - 静默任务**不持久化**；关窗/重启视为该次失败，不留半成品（写入是单次 `createDocWithMd`，不会产生部分文档）。
