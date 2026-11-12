@@ -1,9 +1,26 @@
 {
   "name": "dsh-siyuan-export",
   "version": "0.2.4",
-  "private": true,
   "type": "module",
-  "description": "Export a single dsh assistant reply to SiYuan as a structured note.",
+  "description": "Export a single dsh assistant reply to SiYuan (SiYuan notes only; export-only, no sync back).",
+  "license": "MIT",
+  "author": "snaiheihei",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/snailheihei/dsh_export-plugin_siyuan.git"
+  },
+  "homepage": "https://gitee.com/snailheihei/dsh_export-plugin_siyuan#readme",
+  "bugs": {
+    "url": "https://gitee.com/snailheihei/dsh_export-plugin_siyuan/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "siyuan",
+    "export",
+    "cordis-plugin"
+  ],
+  "main": "./dist/host/index.js",
   "exports": {
     ".": "./dist/host/index.js",
     "./client": "./dist/client/handoff.js",
@@ -29,7 +46,12 @@
     }
   },
   "engines": {
+    "node": ">=22.19.0",
     "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -58,14 +80,14 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
-    "@deepseek-ai/dsh-llm": "file:../github/deepseek-harness/packages/llm/llm",
-    "@deepseek-ai/dsh-host-webserver": "file:../github/deepseek-harness/packages/host/webserver",
-    "@deepseek-ai/dsh-session": "file:../github/deepseek-harness/packages/core/session",
-    "@deepseek-ai/dsh-client-locale": "file:../github/deepseek-harness/packages/client/locale",
-    "@deepseek-ai/dsh-agent": "file:../github/deepseek-harness/packages/core/agent",
-    "@deepseek-ai/dsh-client-ui-slots": "file:../github/deepseek-harness/packages/client/ui-slots",
-    "@deepseek-ai/dsh-client-ui-renderer": "file:../github/deepseek-harness/packages/client/ui-renderer",
-    "@deepseek-ai/dsh-client-ui-chat": "file:../github/deepseek-harness/packages/client/ui-chat",
+    "@deepseek-ai/dsh-llm": "file:../deepseek-harness/packages/llm/llm",
+    "@deepseek-ai/dsh-host-webserver": "file:../deepseek-harness/packages/host/webserver",
+    "@deepseek-ai/dsh-session": "file:../deepseek-harness/packages/core/session",
+    "@deepseek-ai/dsh-client-locale": "file:../deepseek-harness/packages/client/locale",
+    "@deepseek-ai/dsh-agent": "file:../deepseek-harness/packages/core/agent",
+    "@deepseek-ai/dsh-client-ui-slots": "file:../deepseek-harness/packages/client/ui-slots",
+    "@deepseek-ai/dsh-client-ui-renderer": "file:../deepseek-harness/packages/client/ui-renderer",
+    "@deepseek-ai/dsh-client-ui-chat": "file:../deepseek-harness/packages/client/ui-chat",
     "@eslint/js": "^9.0.0",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^24.0.0",
