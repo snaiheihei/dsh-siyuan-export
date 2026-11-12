@@ -210,12 +210,12 @@
 | 设置项云端同步或多设备共享 | 仅面向本机使用 | 否 |
 
 ## Change
-- Status: Active
+- Status: Archived
 - Created: 2026-11-11
-- Archived: —
+- Archived: 2026-11-12
 - Baseline: —
-- Verification: —
-- Verified: —
+- Verification: converge: converged（0 findings，77/77 任务）；verify.standards: 硬违规 0（5 轮复核，遗留均为判断项；宿主主题令牌命名差异另立 Change）
+- Verified: 2026-11-12
 
 ## Delta
 | Operation | Affected capability | Spec references |

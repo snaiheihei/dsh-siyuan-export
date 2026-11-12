@@ -36,7 +36,7 @@ const OVERLAY_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'rgba(0, 0, 0, 0.35)',
+  background: 'var(--dsh-scrim, rgba(0, 0, 0, 0.35))',
   zIndex: 1000,
 };
 
@@ -49,7 +49,7 @@ const PANEL_STYLE: React.CSSProperties = {
   background: 'var(--dsh-panel-bg, #fff)',
   color: 'var(--dsh-panel-fg, #1a1a1a)',
   // app 规范：floats 的阴影也应 faint（原 0 12px 40px .25 过重）
-  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+  boxShadow: 'var(--dsh-shadow-overlay, 0 8px 24px rgba(0, 0, 0, 0.12))',
   display: 'flex',
   flexDirection: 'column',
   gap: '16px',
@@ -80,7 +80,7 @@ const PRIMARY_BUTTON_STYLE: React.CSSProperties = {
   ...BUTTON_STYLE,
   background: 'var(--dsh-accent, #2f6fed)',
   borderColor: 'var(--dsh-accent, #2f6fed)',
-  color: '#fff',
+  color: 'var(--dsh-accent-fg, #fff)',
 };
 
 const SUBMIT_BUTTON_STYLE: React.CSSProperties = {

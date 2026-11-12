@@ -59,6 +59,8 @@ async function setup(options: {
   wrapWriter?: (inner: NoteWriter) => NoteWriter;
   content?: (messageId: string) => string;
   defaultPath?: StoragePath | null;
+  /** 思源笔记本列表（fake 与 targetIo 共用；默认只有 nb-default） */
+  notebooks?: { id: string; name: string }[];
   /** 注入慢 rename：让「状态先于原子写完成可见」的竞态稳定复现（T073） */
   prefsRenameDelayMs?: number;
 } = {}): Promise<{
@@ -97,7 +99,8 @@ async function setup(options: {
   };
   await prefs.update({ showDialog: false, defaultPath: options.defaultPath ?? null });
 
-  const siyuan = await startFakeSiyuan({ token: 'TK' });
+  const notebooks = options.notebooks ?? [{ id: 'nb-default', name: '默认笔记本' }];
+  const siyuan = await startFakeSiyuan({ token: 'TK', notebooks });
   cleanups.push(siyuan.close);
   const client = new SiyuanClient({ endpoint: siyuan.endpoint, token: 'TK' });
 
@@ -124,7 +127,7 @@ async function setup(options: {
     writer,
     prefs,
     targetIo: {
-      listNotebooks: async () => [{ id: 'nb-default', name: '默认笔记本' }],
+      listNotebooks: async () => notebooks,
       getIdsByHPath: async () => [],
     },
   });
@@ -182,6 +185,27 @@ describe('静默后台编排（T058）', () => {
     });
     await h.prefsWrites.lastPath;
     expect((await h.prefs.read()).lastPath).toEqual(ROOT_TARGET);
+  });
+
+  it('冷启动并发同键 open → 只建一条流水线、只调一次 LLM、只写一篇', async () => {
+    const gate = deferred<string>();
+    const h = await setup({ gateway: { generate: () => gate.promise } });
+
+    const opened = await Promise.all([
+      h.service.open({ messageId: 'm1', sessionId: 's1' }),
+      h.service.open({ messageId: 'm1', sessionId: 's1' }),
+    ]);
+    const first = opened[0]!;
+    if (first.mode !== 'silent') throw new Error('期望静默模式响应');
+    for (const item of opened) expect(item.mode).toBe('silent');
+    expect(h.llmCalls).toHaveLength(1);
+    expect(opened.filter((item) => item.mode === 'silent' && item.alreadyRunning)).toHaveLength(1);
+
+    gate.resolve(JSON.stringify({ title: '并发标题', body: '## 小节\n- ✅ 一份' }));
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('succeeded');
+    });
+    expect(h.createDocs()).toHaveLength(1);
   });
 
   it('同键重复 open：alreadyRunning=true，只调一次 LLM、只写一篇', async () => {
@@ -455,6 +479,29 @@ describe('跨模式同键导出（T076）', () => {
     expect(h.createDocs()).toHaveLength(1);
   });
 
+  it('并发静默接管就绪的弹窗任务 → 只写一篇（解析落点期间不放行第二条流水线）', async () => {
+    const h = await setup();
+    await h.prefs.update({ showDialog: true });
+    const dialog = await openDialog(h);
+    await waitReady(h, dialog.taskId);
+
+    const opened = await Promise.all([
+      h.service.open({ messageId: 'm1', sessionId: 's1', intent: 'silent' }),
+      h.service.open({ messageId: 'm1', sessionId: 's1', intent: 'silent' }),
+    ]);
+    for (const item of opened) {
+      expect(item.mode).toBe('silent');
+      if (item.mode !== 'silent') throw new Error('期望静默模式响应');
+      expect(item.taskId).toBe(dialog.taskId);
+    }
+
+    await vi.waitFor(async () => {
+      expect((await h.service.state(dialog.taskId)).status).toBe('succeeded');
+    });
+    expect(h.llmCalls).toHaveLength(1);
+    expect(h.createDocs()).toHaveLength(1);
+  });
+
   it('弹窗任务生成中关闭开关 → 同键 open 转静默并沿用进行中的 LLM 流', async () => {
     const gate = deferred<string>();
     const h = await setup({ gateway: { generate: () => gate.promise } });
@@ -587,6 +634,117 @@ describe('静默失败、重试与降级（T059）', () => {
     expect(h.createDocs()).toHaveLength(1);
     expect(h.siyuan.docs).toHaveLength(1);
     expect(h.siyuan.docs[0]!.path).toBe('/默认标题');
+  });
+
+  it('失败后修改默认路径 → 重试按当前偏好重新解析落点（data-model `failed` 行）', async () => {
+    const other: StoragePath = {
+      notebookId: 'nb-other',
+      notebookName: '第二笔记本',
+      parentSegments: [],
+      display: '第二笔记本',
+    };
+    let failures = 1;
+    const h = await setup({
+      defaultPath: ROOT_TARGET,
+      notebooks: [
+        { id: 'nb-default', name: '默认笔记本' },
+        { id: 'nb-other', name: '第二笔记本' },
+      ],
+      wrapWriter: (inner) => ({
+        write: async (input) => {
+          if (failures > 0) {
+            failures -= 1;
+            throw new SiyuanError('siyuan-connect', '思源服务暂时不可用（HTTP 503），请稍后重试', true);
+          }
+          return inner.write(input);
+        },
+      }),
+    });
+
+    const first = expectSilent(await h.service.open({ messageId: 'm1', sessionId: 's1' }));
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('failed');
+    });
+    expect((await h.service.state(first.taskId)).target).toEqual(ROOT_TARGET);
+
+    await h.prefs.update({ defaultPath: other });
+    expectSilent(await h.service.open({ messageId: 'm1', sessionId: 's1' }));
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('succeeded');
+    });
+
+    const done = await h.service.state(first.taskId);
+    expect(done.target).toEqual(other);
+    expect(h.llmCalls).toHaveLength(1);
+    expect(h.createDocs()).toHaveLength(1);
+    expect(h.createDocs()[0]!.body.notebook).toBe('nb-other');
+  });
+
+  it('失败重试并发 open → 只写一篇（解析落点期间不放开 writing 门闩）', async () => {
+    let failures = 1;
+    const h = await setup({
+      defaultPath: ROOT_TARGET,
+      wrapWriter: (inner) => ({
+        write: async (input) => {
+          if (failures > 0) {
+            failures -= 1;
+            throw new SiyuanError('siyuan-connect', '思源服务暂时不可用（HTTP 503），请稍后重试', true);
+          }
+          return inner.write(input);
+        },
+      }),
+    });
+
+    const first = expectSilent(await h.service.open({ messageId: 'm1', sessionId: 's1' }));
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('failed');
+    });
+
+    const opened = await Promise.all([
+      h.service.open({ messageId: 'm1', sessionId: 's1' }),
+      h.service.open({ messageId: 'm1', sessionId: 's1' }),
+    ]);
+    for (const item of opened) expect(item.mode).toBe('silent');
+
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('succeeded');
+    });
+    expect(h.llmCalls).toHaveLength(1);
+    expect(h.createDocs()).toHaveLength(1);
+  });
+
+  it('重试时默认路径失效 → 再次 failed（siyuan-path），不写入、不重调 LLM', async () => {
+    let failures = 1;
+    const h = await setup({
+      defaultPath: ROOT_TARGET,
+      wrapWriter: (inner) => ({
+        write: async (input) => {
+          if (failures > 0) {
+            failures -= 1;
+            throw new SiyuanError('siyuan-connect', '思源服务暂时不可用（HTTP 503），请稍后重试', true);
+          }
+          return inner.write(input);
+        },
+      }),
+    });
+
+    const first = expectSilent(await h.service.open({ messageId: 'm1', sessionId: 's1' }));
+    await vi.waitFor(async () => {
+      expect((await h.service.state(first.taskId)).status).toBe('failed');
+    });
+
+    await h.prefs.update({
+      defaultPath: { ...ROOT_TARGET, notebookId: 'nb-missing', notebookName: '已删除' },
+    });
+    const retry = expectSilent(await h.service.open({ messageId: 'm1', sessionId: 's1' }));
+    expect(retry.status).toBe('failed');
+    expect(retry.alreadyRunning).toBe(false);
+
+    const failed = await h.service.state(first.taskId);
+    expect(failed.error?.category).toBe('siyuan-path');
+    expect(failed.target).toEqual(ROOT_TARGET); // 落点未被改写
+    expect(h.llmCalls).toHaveLength(1);
+    expect(h.createDocs()).toHaveLength(0);
   });
 
   it('生成失败降级：仍以原文写入并置 degraded=true', async () => {
