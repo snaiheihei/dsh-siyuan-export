@@ -22,3 +22,8 @@ test-agents-home/
 Thumbs.db
 *.tmp
 *.swp
+
+# 本地 agent / spec 工具配置：只在本地版本控制（各目录自带 .git），不进入发布仓库
+.dsh/
+.qoder/
+.specify/
