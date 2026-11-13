@@ -7,11 +7,11 @@
   "author": "snaiheihei",
   "repository": {
     "type": "git",
-    "url": "git+https://gitee.com/snailheihei/dsh_export-plugin_siyuan.git"
+    "url": "git+https://github.com/snaiheihei/dsh-siyuan-export.git"
   },
-  "homepage": "https://gitee.com/snailheihei/dsh_export-plugin_siyuan#readme",
+  "homepage": "https://github.com/snaiheihei/dsh-siyuan-export#readme",
   "bugs": {
-    "url": "https://gitee.com/snailheihei/dsh_export-plugin_siyuan/issues"
+    "url": "https://github.com/snaiheihei/dsh-siyuan-export/issues"
   },
   "keywords": [
     "dsh",
